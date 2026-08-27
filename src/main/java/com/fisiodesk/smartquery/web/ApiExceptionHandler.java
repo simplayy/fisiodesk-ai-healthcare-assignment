@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -28,6 +29,12 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleDate(DateTimeParseException e) {
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "Data di riferimento non valida, formato atteso yyyy-MM-dd"));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNotFound(NoResourceFoundException e) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Risorsa non trovata"));
     }
 
     @ExceptionHandler(Exception.class)
