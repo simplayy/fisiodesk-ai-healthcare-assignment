@@ -157,6 +157,11 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 └── src/test/java/              # unit test (analizzatore, parser, esecuzione)
 ```
 
+## Troubleshooting
+
+- **`fisiodesk-mongodb` esce con `ReplicaSetNoPrimary` dopo un ricreate del container**: è un limite noto dell'immagine Atlas Local quando riusa un volume con una configurazione di replica set precedente. Reset: `docker compose down -v && docker compose up -d --build` (i dati demo vengono re-importati e ri-indicizzati automaticamente).
+- **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
+
 ## Sviluppo locale
 
 ```bash
