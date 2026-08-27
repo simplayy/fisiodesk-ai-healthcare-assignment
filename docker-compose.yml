@@ -3,7 +3,8 @@ services:
     image: mongodb/mongodb-atlas-local:8.0
     container_name: fisiodesk-mongodb
     ports:
-      - "27017:27017"
+      # Bound to localhost: the database must not be reachable from outside the host.
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_DATABASE: fisiodesk
     volumes:
@@ -11,7 +12,9 @@ services:
       - mongodb_config:/data/configdb
       - mongodb_mongot:/data/mongot
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      # Atlas Local runs as a single-node replica set: right after start the
+      # node is still SECONDARY, so wait for it to become writable, not just up.
+      test: ["CMD", "mongosh", "--quiet", "--eval", "if (!db.hello().isWritablePrimary) quit(1)"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -68,7 +71,7 @@ services:
     image: mongo-express:latest
     container_name: fisiodesk-mongo-express
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       ME_CONFIG_MONGODB_URL: mongodb://mongodb:27017/
       ME_CONFIG_BASICAUTH: false
