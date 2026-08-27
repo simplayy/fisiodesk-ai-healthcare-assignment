@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FisioDesk · Query intelligenti</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <div class="brand">
+        <span class="brand-mark">F</span>
+        <div>
+          <div class="brand-name">FisioDesk</div>
+          <div class="brand-sub">Query intelligenti sui dati clinici</div>
+        </div>
+      </div>
+      <div class="status" id="status">connessione…</div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="search-card">
+      <label for="question" class="search-label">Fai una domanda sui tuoi pazienti</label>
+      <div class="search-row">
+        <textarea id="question" rows="2" placeholder="Es. Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento">Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento</textarea>
+        <button id="run" type="button">Cerca</button>
+      </div>
+      <div class="examples">
+        <span>Esempi:</span>
+        <button class="chip" data-q="Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento">query target</button>
+        <button class="chip" data-q="Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi">lombalgia senza miglioramento</button>
+        <button class="chip" data-q="Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi">cervicalgia in miglioramento</button>
+        <button class="chip" data-q="Chi ha saltato l'ultimo appuntamento?">no-show recenti</button>
+      </div>
+    </section>
+
+    <section id="plan-box" class="plan-box hidden">
+      <div class="plan-title">Come ho interpretato la domanda</div>
+      <div id="plan-chips" class="plan-chips"></div>
+    </section>
+
+    <section id="results"></section>
+  </main>
+
+  <footer class="container footer" id="footer"></footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
