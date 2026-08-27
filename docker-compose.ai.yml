@@ -1,0 +1,50 @@
+# Optional overlay that runs the AI analysis on a fully local LLM (Ollama),
+# so no API key or external service is needed:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
+#
+# First start downloads the model (~1 GB). On CPU each note takes a few
+# seconds to analyze; the indexer upgrades existing heuristic analyses in the
+# background while the API stays available.
+
+services:
+  smart-query:
+    environment:
+      AI_ENABLED: "true"
+      AI_BASE_URL: http://ollama:11434/v1
+      AI_MODEL: ${AI_MODEL:-qwen2.5:1.5b}
+      AI_TIMEOUT_MS: "90000"
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: fisiodesk-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    networks:
+      - fisiodesk-network
+
+  # Downloads the model into the shared volume, then exits.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: fisiodesk-ollama-pull
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["OLLAMA_HOST=http://ollama:11434 ollama pull ${AI_MODEL:-qwen2.5:1.5b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - fisiodesk-network
+
+volumes:
+  ollama_models:
