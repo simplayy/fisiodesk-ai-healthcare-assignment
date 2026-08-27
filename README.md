@@ -1,202 +1,183 @@
-# FisioDesk - MongoDB Development Environment
+# FisioDesk – Query intelligenti sui dati clinici
 
-A Docker-based MongoDB Atlas Local development environment for FisioDesk, a physiotherapy patient management system with built-in vector search capabilities.
+Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un professionista scrive una domanda come:
 
-## Features
+> *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
 
-- **MongoDB Atlas Local** with vector search support
-- **Pre-loaded sample data** for development
-- **MongoDB Express UI** for database visualization
-- **Automatic data import** on startup
-- **Vector search ready** for AI-powered features
+e ottiene in meno di 100 ms la lista dei pazienti corrispondenti, con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato.
 
-## Prerequisites
-
-- Docker Desktop 4.31+ (macOS/Windows) or Docker Engine 27.0+ (Linux)
-- Docker Compose
-- 4GB RAM minimum
-- Network connection for pulling Docker images
-
-## Quick Start
-
-1. Clone or download repository:
-```bash
-git clone <repository-url>
-cd ai-healthcare-assignment
-```
-
-2. Start the services:
-```bash
-docker-compose up
-```
-
-3. Access the services:
-- **MongoDB**: `localhost:27017`
-- **MongoDB Express UI**: `http://localhost:8081`
-- **MongoDB Compass**: `mongodb://127.0.0.1:27017/?directConnection=true&serverSelectionTimeoutMS=2000`
-
-4. Verify data import:
-```bash
-docker logs fisiodesk-mongodb-seed
-```
-
-## Project Structure
-
-```
-.
-├── docker-compose.yml            # Docker services configuration
-├── data/                         # Sample data files
-│   ├── pazienti.json            # Patient records
-│   ├── schede_valutazione.json  # Evaluation forms
-│   ├── diario_trattamenti.json  # Treatment logs
-│   └── eventi_calendario.json   # Calendar events
-├── ai_integration_homework_v2.md # Original assignment document
-├── USE_CASES_AND_TESTS.md       # Detailed test cases and use cases
-└── README.md                    # This file
-```
-
-## Database Collections
-
-### pazienti
-Patient records containing:
-- Personal information (name, age, contact)
-- Assigned physiotherapist
-- Registration date and status
-
-### schede_valutazione
-Patient evaluation forms for tracking assessments
-
-### diario_trattamenti
-Treatment diary entries documenting patient sessions
-
-### eventi_calendario
-Calendar events for scheduling appointments
-
-## Vector Search Capabilities
-
-MongoDB Atlas Local includes built-in vector search capabilities for AI-powered features.
-
-## Common Commands
-
-### Start Services
-```bash
-# Start all services in background
-docker-compose up -d
-
-# Start with logs visible
-docker-compose up
-```
-
-### Stop Services
-```bash
-# Stop containers
-docker-compose down
-
-# Stop and remove volumes (deletes all data)
-docker-compose down -v
-```
-
-### Database Operations
-```bash
-# Connect to MongoDB shell
-docker exec -it fisiodesk-mongodb mongosh
-
-# Re-import sample data
-docker-compose restart mongodb-seed
-
-# View import logs
-docker logs fisiodesk-mongodb-seed
-```
-
-### Troubleshooting
-```bash
-# Check service status
-docker-compose ps
-
-# View MongoDB logs
-docker logs fisiodesk-mongodb
-
-# Rebuild and restart
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
-```
-
-## Development Workflow
-
-1. **Start the environment**: `docker-compose up -d`
-2. **Develop your application** connecting to `mongodb://localhost:27017/fisiodesk`
-3. **Inspect data** using:
-   - MongoDB Express: `http://localhost:8081`
-   - MongoDB Compass (client locale): `mongodb://127.0.0.1:27017/?directConnection=true`
-4. **Stop when done**: `docker-compose down`
-
-## Support
-
-For issues or questions:
-1. Check container logs: `docker logs <container-name>`
-2. Verify Docker resources in Docker Desktop settings
-3. Ensure ports 27017 and 8081 are not in use
+**Stack**: Java 17 · Spring Boot 3.5 · Gradle · MongoDB — allineato allo stack esistente di FisioDesk/Dottai, così i componenti descritti qui si integrano nel backend attuale senza introdurre un nuovo runtime. Frontend demo in HTML/JS statico servito dalla stessa applicazione.
 
 ---
 
-## 🎯 Challenge per il Candidato
+## Avvio rapido
 
-Questo repository è preparato per testare le tue competenze di **system design** e **AI integration** in un contesto reale di gestionale sanitario.
+Prerequisiti: Docker + Docker Compose.
 
-### Il Compito: Sistema di Query Intelligenti
-
-Devi implementare un sistema che permetta ai professionisti sanitari di fare query complesse sui loro dati usando linguaggio naturale e AI.
-
-**🎯 Query Target da Implementare:**
-> *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
-
-### Perché è Complessa?
-- Richiede **AI** per interpretare "miglioramento" dai testi liberi
-- Combina **multiple collections** MongoDB (schede_valutazione, eventi_calendario, pazienti)  
-- Filtra per **timeframe** specifico
-- Correla **compliance paziente** con **progressi clinici**
-
-### Vincoli Operativi
-- ⚡ **Performance**: <2 secondi con 50+ professionisti concorrenti
-- 💰 **Budget limitato** per API calls AI
-- 🔄 **Integrazione** con sistema esistente (SpringBoot + MongoDB)
-- 📊 **Accuratezza** per decisioni cliniche
-
-### I Tuoi Deliverable
-1. **Diagramma architettura** della tua soluzione
-2. **MVP funzionante** con Docker Compose
-3. **README** con setup e demo della query target
-4. **Documentazione** dei trade-offs principali
-
-### Dati di Test Disponibili
-Il database contiene casi realistici che supportano la query target:
-Nota: i dati coprono Marzo-Dicembre 2024; per il filtro "ultimi 3 mesi" usa una data di riferimento esplicita (es. 2024-12-31 o la data massima nel dataset).
-
-- **Mario Rossi**: Dolore lombare con miglioramento + no_show (caso positivo ✅)
-- **Laura Bianchi**: Dolore lombare con miglioramento + no_show (caso positivo ✅) 
-- **Roberto Romano**: Low back pain con miglioramento + no_show (caso positivo ✅)
-- **Marco Colombo**: Lombalgia con miglioramento + no_show (caso positivo ✅)
-- **Anna Ferrari**: Lombalgia SENZA miglioramento + no_show (caso negativo ❌)
-- **Giuseppe Verdi**: Solo cervicalgia, niente lombare (caso negativo ❌)
-
-### Struttura Collections MongoDB
-
-```javascript
-// pazienti - 7 pazienti con professionisti diversi
-{ _id, nome, cognome, eta, telefono, email, professionista_principale, stato }
-
-// schede_valutazione - 18 valutazioni con variabilità linguistica
-{ _id, paziente_id, data, descrizione, professionista_id }
-// Contiene: "dolore lombare", "mal di schiena", "lombalgia", "rachialgia", "low back pain"
-// E indicatori di miglioramento: "miglioramento", "sta meglio", "progressi", "risoluzione"
-
-// diario_trattamenti - 16 trattamenti con outcome diversi  
-{ _id, paziente_id, data, descrizione, professionista_id }
-
-// eventi_calendario - 21 appuntamenti con stati variegati
-{ _id, paziente_id, data, stato, durata, professionista_id, note }
-// Stati: "completato", "no_show", "cancellato", "prenotato"
+```bash
+git clone <repository-url>
+cd fisiodesk-ai-healthcare-assignment
+docker compose up -d --build
 ```
 
-Per i casi di test dettagliati vedi `USE_CASES_AND_TESTS.md` 🚀
+Servizi disponibili:
+
+| Servizio | URL |
+|---|---|
+| Web UI + API | http://localhost:8080 |
+| API query | `POST http://localhost:8080/api/query` |
+| Stato indicizzazione | `GET http://localhost:8080/api/stats` |
+| MongoDB | `localhost:27017` |
+| Mongo Express | http://localhost:8081 |
+
+Al primo avvio l'applicazione indicizza le note cliniche (qualche secondo in modalità deterministica); lo stato è visibile su `/api/stats` e nell'header della UI.
+
+### Demo della query target
+
+Dalla UI (http://localhost:8080) la query target è già precompilata: basta premere **Cerca**. Da terminale:
+
+```bash
+curl -s -X POST http://localhost:8080/api/query \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'\''ultimo appuntamento"}'
+```
+
+Risultato atteso sul dataset demo: **Roberto Romano, Marco Colombo, Mario Rossi, Laura Bianchi** (in ordine di forza del miglioramento). Anna Ferrari è esclusa (lombalgia ma nessun miglioramento), Giuseppe Verdi è escluso (migliora ma sul rachide cervicale, e non ha saltato l'ultimo appuntamento), Francesca Ricci è esclusa (nessun dato recente).
+
+Altre domande supportate, per mostrare che non è un sistema a query fissa:
+
+```
+Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi   -> Anna Ferrari
+Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi               -> Giuseppe Verdi
+Chi ha saltato l'ultimo appuntamento?                                       -> tutti i no-show recenti
+```
+
+Nota sulle date: il dataset copre marzo–dicembre 2024, quindi come "oggi" viene usata la data dell'ultimo evento in calendario (31/12/2024). È sovrascrivibile con la variabile `REFERENCE_DATE` o col campo `referenceDate` della richiesta.
+
+### Modalità AI con LLM locale (opzionale)
+
+Di default il sistema usa l'analizzatore deterministico (nessuna dipendenza esterna, risultati riproducibili). Per usare un LLM vero ci sono due strade:
+
+**LLM locale via Ollama** (nessuna API key, tutto on-premise):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
+```
+
+Il primo avvio scarica il modello (`qwen2.5:1.5b`, ~1 GB). L'indexer ri-analizza le note in background con l'LLM mantenendo il servizio disponibile; anche l'interpretazione della domanda passa all'LLM.
+
+Nota sulla latenza: su CPU il planning LLM di una domanda *nuova* costa qualche secondo; i piani sono cachati 30 minuti, quindi le domande ricorrenti restano sotto i 100 ms. Il vincolo <2s per 50+ utenti concorrenti è garantito dal design (nessuna analisi di testo a runtime, solo letture indicizzate): l'unica parte variabile è la singola chiamata di planning, che in produzione userebbe un modello hosted (~300-500 ms) o il parser a regole.
+
+**Provider esterno** (qualunque endpoint compatibile OpenAI):
+
+```bash
+AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
+```
+
+In entrambi i casi, se l'LLM non risponde il sistema degrada automaticamente sull'analizzatore deterministico: il servizio non si ferma mai per un problema del provider AI.
+
+---
+
+## Architettura
+
+```mermaid
+flowchart LR
+    subgraph client [Professionista]
+        UI[Web UI / API client]
+    end
+
+    subgraph app [Spring Boot - fisiodesk-smart-query]
+        QP[Query Planner\nLLM con fallback a regole]
+        EX[Query Executor\nsolo letture indicizzate]
+        CACHE[(Cache risposte\n60s in-memory)]
+        IDX[Insight Indexer\nbatch incrementale]
+        AN[Text Analysis\nLLM con fallback a lessico]
+    end
+
+    subgraph mongo [MongoDB]
+        SV[(schede_valutazione)]
+        DT[(diario_trattamenti)]
+        EC[(eventi_calendario)]
+        PZ[(pazienti)]
+        NI[(note_insights\npre-calcolata)]
+    end
+
+    LLM[LLM: Ollama locale\no endpoint OpenAI-compatibile]
+
+    UI -->|POST /api/query| QP --> EX
+    EX --> CACHE
+    EX --> NI
+    EX --> EC
+    EX --> PZ
+    IDX --> SV
+    IDX --> DT
+    IDX --> AN
+    AN -.->|solo in fase di indicizzazione| LLM
+    QP -.->|1 chiamata breve per query| LLM
+    AN --> NI
+```
+
+### L'idea centrale: indicizzare, non ri-analizzare
+
+Il vincolo <2s con 50+ professionisti concorrenti e il budget AI limitato portano alla stessa conclusione: **l'AI non può stare nel percorso di risposta della query sui testi**. La pipeline è quindi divisa in due:
+
+1. **Indicizzazione (batch, incrementale)** — un job periodico confronta `schede_valutazione` e `diario_trattamenti` con la collection `note_insights`: ogni nota nuova o modificata (hash SHA-256 del testo) viene analizzata **una sola volta** e il risultato persistito: aree anatomiche citate (gestendo i sinonimi: "lombalgia", "mal di schiena", "low back pain", "colpo della strega" → `LUMBAR`), segnale di miglioramento (da −3 a +3, con gestione delle negazioni: "non risponde bene alla terapia" non è un miglioramento), evidenze testuali. Il costo AI è proporzionale alle note scritte, non alle query eseguite.
+
+2. **Query (real-time)** — la domanda viene tradotta in un piano strutturato (aree, finestra temporale, miglioramento richiesto, filtro no-show) con una singola chiamata LLM breve — o col parser a regole — e il piano viene eseguito con normali query MongoDB indicizzate su `note_insights` + `eventi_calendario` + `pazienti`. Nessuna analisi di testo a runtime. Una cache in-memory (60s) assorbe le domande ripetute.
+
+"Ultimo appuntamento saltato" è definito così: l'evento più recente del paziente con data ≤ data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta come saltato.
+
+### Cosa succede se l'AI non funziona
+
+Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback deterministico basato su un lessico fisioterapico italiano con gestione delle negazioni. Il fallback scatta per timeout, errori del provider o risposte non parsabili; quando l'LLM torna disponibile, l'indexer ri-analizza (una volta sola) le note classificate col fallback.
+
+---
+
+## Trade-off principali
+
+- **Pre-calcolo batch invece di AI a runtime** — la query resta sotto i 100 ms e il costo AI è per-nota invece che per-query; in cambio una nota nuova diventa cercabile al ciclo di indicizzazione successivo (default 30s), non istantaneamente. Per un gestionale clinico è un compromesso accettabile; in produzione il trigger diventerebbe un evento sul salvataggio della nota (change stream / coda).
+- **Classificazione a punteggio su lessico + LLM opzionale invece di embeddings/vector search** — per la query target servono segnali *direzionali* (migliora / non migliora) e di *area anatomica*, che un classificatore per nota cattura in modo spiegabile (ogni risultato mostra i termini che l'hanno motivato — importante per decisioni cliniche). La vector search di MongoDB Atlas diventa utile al crescere del corpus e delle query aperte ("pazienti simili a…"), e si innesta nella stessa pipeline: stessi documenti `note_insights`, in più un embedding per nota.
+- **Aggregazione in application-layer invece di pipeline Mongo monolitica** — con collections separate la correlazione insights↔calendario↔anagrafica è fatta nel service con query indicizzate mirate: più leggibile e testabile di un unico `$lookup` a tre stadi, a costo di qualche round-trip in più (irrilevante a questi volumi; con dataset molto più grandi il candidato naturale è una `$lookup` singola o una vista materializzata per professionista).
+
+## Struttura del progetto
+
+```
+├── docker-compose.yml          # MongoDB + seed dati + app + Mongo Express
+├── docker-compose.ai.yml       # overlay opzionale: LLM locale via Ollama
+├── Dockerfile                  # build multi-stage (Gradle -> JRE)
+├── data/                       # dataset demo (marzo-dicembre 2024)
+├── src/main/java/com/fisiodesk/smartquery/
+│   ├── analysis/               # lessico clinico, analizzatori, indexer batch
+│   ├── nlq/                    # traduzione domanda -> piano strutturato
+│   ├── query/                  # esecuzione piano, cache, DTO
+│   ├── llm/                    # client chat-completions OpenAI-compatibile
+│   ├── web/                    # REST controller + error handling
+│   └── domain/ repository/     # mapping collections MongoDB
+├── src/main/resources/static/  # web UI demo
+└── src/test/java/              # unit test (analizzatore, parser, esecuzione)
+```
+
+## Sviluppo locale
+
+```bash
+# solo il database
+docker compose up -d mongodb mongodb-seed
+
+# applicazione in locale
+./gradlew bootRun
+
+# test
+./gradlew test
+```
+
+## API
+
+`POST /api/query`
+
+```json
+{ "question": "…", "referenceDate": "2024-12-31" }
+```
+
+Risposta: piano interpretato (trasparenza su come è stata capita la domanda), risultati ordinati per forza del miglioramento con evidenze per nota, metadati (latenza, cache, data di riferimento). `referenceDate` è opzionale.
+
+`GET /api/stats` — note indicizzate e analizzatore usato. `GET /actuator/health` — healthcheck.
