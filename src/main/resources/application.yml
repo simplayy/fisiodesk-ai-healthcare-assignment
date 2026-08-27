@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: fisiodesk-smart-query
+  data:
+    mongodb:
+      uri: ${MONGO_URI:mongodb://localhost:27017/fisiodesk}
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+smartquery:
+  # Optional fixed "today" (yyyy-MM-dd) for relative windows like "ultimi 3 mesi".
+  # Left empty, the latest calendar event in the database is used, which suits
+  # the 2024 demo dataset. In production this would simply be the current date.
+  reference-date: ${REFERENCE_DATE:}
+  indexer:
+    initial-delay-ms: 3000
+    fixed-delay-ms: 30000
+  ai:
+    # Any OpenAI-compatible endpoint works (OpenAI, OpenRouter, local Ollama...).
+    enabled: ${AI_ENABLED:false}
+    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:gpt-4o-mini}
+    timeout-ms: ${AI_TIMEOUT_MS:20000}
+
+logging:
+  level:
+    org.mongodb.driver: warn
