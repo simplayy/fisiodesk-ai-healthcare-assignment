@@ -15,12 +15,21 @@ class PlanGuardrailTest {
     }
 
     @Test
+    void anExplicitWindowInTheQuestionWinsOverTheModel() {
+        QueryPlan llm = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 6, false, "llm");
+        QueryPlan rules = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "heuristic");
+
+        assertThat(PlanGuardrail.merge(llm, rules, true).windowMonths()).isEqualTo(3);
+        assertThat(PlanGuardrail.merge(llm, rules, false).windowMonths()).isEqualTo(6);
+    }
+
+    @Test
     void explicitMarkersMissedByTheModelAreRestored() {
         // "guariti" is in the question, the model dropped it, the lexicon saw it.
         QueryPlan llm = plan(EnumSet.of(BodyArea.LUMBAR), false, false, 4, false, "llm");
         QueryPlan rules = plan(EnumSet.of(BodyArea.LUMBAR), true, false, 4, false, "heuristic");
 
-        QueryPlan merged = PlanGuardrail.merge(llm, rules);
+        QueryPlan merged = PlanGuardrail.merge(llm, rules, false);
 
         assertThat(merged.requireImprovement()).isTrue();
         assertThat(merged.windowMonths()).isEqualTo(4);
@@ -32,7 +41,7 @@ class PlanGuardrailTest {
         QueryPlan llm = plan(EnumSet.of(BodyArea.SHOULDER), false, false, 3, true, "llm");
         QueryPlan rules = plan(EnumSet.of(BodyArea.LUMBAR), false, false, 3, true, "heuristic");
 
-        assertThat(PlanGuardrail.merge(llm, rules).bodyAreas()).containsExactly(BodyArea.LUMBAR);
+        assertThat(PlanGuardrail.merge(llm, rules, false).bodyAreas()).containsExactly(BodyArea.LUMBAR);
     }
 
     @Test
@@ -40,7 +49,7 @@ class PlanGuardrailTest {
         QueryPlan llm = plan(EnumSet.of(BodyArea.KNEE), false, false, 3, false, "llm");
         QueryPlan rules = plan(EnumSet.noneOf(BodyArea.class), false, false, 3, false, "heuristic");
 
-        assertThat(PlanGuardrail.merge(llm, rules).bodyAreas()).containsExactly(BodyArea.KNEE);
+        assertThat(PlanGuardrail.merge(llm, rules, false).bodyAreas()).containsExactly(BodyArea.KNEE);
     }
 
     @Test
@@ -49,7 +58,7 @@ class PlanGuardrailTest {
         QueryPlan llm = plan(EnumSet.noneOf(BodyArea.class), false, false, 3, true, "llm");
         QueryPlan rules = plan(EnumSet.noneOf(BodyArea.class), false, false, 3, false, "heuristic");
 
-        assertThat(PlanGuardrail.merge(llm, rules).missedLastAppointment()).isTrue();
+        assertThat(PlanGuardrail.merge(llm, rules, false).missedLastAppointment()).isTrue();
     }
 
     @Test
@@ -57,7 +66,7 @@ class PlanGuardrailTest {
         QueryPlan llm = plan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "llm");
         QueryPlan rules = plan(EnumSet.of(BodyArea.LUMBAR), false, true, 3, false, "heuristic");
 
-        QueryPlan merged = PlanGuardrail.merge(llm, rules);
+        QueryPlan merged = PlanGuardrail.merge(llm, rules, false);
 
         assertThat(merged.requireWorsening()).isTrue();
         assertThat(merged.requireImprovement()).isFalse();
@@ -69,6 +78,6 @@ class PlanGuardrailTest {
         QueryPlan rules = plan(EnumSet.of(BodyArea.KNEE), false, false,
                 QueryPlan.DEFAULT_WINDOW_MONTHS, false, "heuristic");
 
-        assertThat(PlanGuardrail.merge(llm, rules).windowMonths()).isEqualTo(6);
+        assertThat(PlanGuardrail.merge(llm, rules, false).windowMonths()).isEqualTo(6);
     }
 }

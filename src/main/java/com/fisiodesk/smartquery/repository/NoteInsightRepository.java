@@ -8,9 +8,11 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface NoteInsightRepository extends MongoRepository<NoteInsight, String> {
 
-    List<NoteInsight> findByDataBetween(Instant from, Instant to);
+    // Between is exclusive on both ends in Spring Data MongoDB: spell the bounds out.
+    List<NoteInsight> findByDataGreaterThanEqualAndDataLessThanEqual(Instant from, Instant to);
 
-    List<NoteInsight> findByProfessionistaIdAndDataBetween(ObjectId professionistaId, Instant from, Instant to);
+    List<NoteInsight> findByProfessionistaIdAndDataGreaterThanEqualAndDataLessThanEqual(
+            ObjectId professionistaId, Instant from, Instant to);
 
     long countByAnalyzer(String analyzer);
 }

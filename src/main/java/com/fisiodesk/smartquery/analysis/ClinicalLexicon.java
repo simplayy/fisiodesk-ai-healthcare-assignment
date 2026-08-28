@@ -24,11 +24,11 @@ public final class ClinicalLexicon {
                 "lombalg", "lombar", "bassa schiena", "mal di schiena", "schiena",
                 "low back", "colpo della strega", "sciatalg", "lombosacral"));
         put(BodyArea.CERVICAL, List.of(
-                "cervical", "collo", "torcicollo", "nucale"));
+                "cervical", "collo", "torcicollo", "nucal"));
         put(BodyArea.SHOULDER, List.of(
-                "spalla", "cuffia dei rotatori", "periartrite"));
+                "spall", "cuffia dei rotatori", "periartrite"));
         put(BodyArea.KNEE, List.of(
-                "ginocchio", "rotule", "menisc"));
+                "ginocchi", "rotul", "menisc"));
         put(BodyArea.HIP, List.of(
                 "anca", "coxalg", "trocanter"));
     }};
@@ -61,6 +61,25 @@ public final class ClinicalLexicon {
     /** Words that flip the meaning of a positive term appearing shortly after them. */
     public static final List<String> NEGATION_MARKERS = List.of(
             "non ", "nessun", "senza ", "scarso ", "scarsa ", "assenza di", "mancato ");
+
+    /**
+     * True when one of the terms appears at the start of a word: the terms are
+     * stems ("lombalg" matches "lombalgia"), but "anca" must not fire on
+     * "stanca" or "mancanza".
+     */
+    public static boolean containsTerm(String normalizedText, String term) {
+        int from = 0;
+        while (true) {
+            int i = normalizedText.indexOf(term, from);
+            if (i < 0) {
+                return false;
+            }
+            if (i == 0 || !Character.isLetter(normalizedText.charAt(i - 1))) {
+                return true;
+            }
+            from = i + 1;
+        }
+    }
 
     /** Lowercases and strips accents so "mobilità" matches "mobilita". */
     public static String normalize(String text) {

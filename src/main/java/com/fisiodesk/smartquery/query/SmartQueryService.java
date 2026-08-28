@@ -51,7 +51,7 @@ public class SmartQueryService {
 
     /** What the execution did, for the explanation shown with the answer. */
     public record Trace(long insightsMs, int notesInWindow, int notesMatchingArea,
-                        int patientsInWindow, int patientsEvaluated, long evaluationMs,
+                        int patientsInWindow, long evaluationMs,
                         List<Exclusion> excluded) {
     }
 
@@ -60,20 +60,16 @@ public class SmartQueryService {
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.of("UTC"));
 
-    public List<PatientResult> execute(QueryPlan plan, Instant referenceDate) {
-        return execute(plan, referenceDate, null);
-    }
+
 
     /**
+     * Executes the plan over the pre-computed insights.
+     *
      * @param professionistaId when set, only notes written by this professional
      *                         are considered: each professional sees their own
      *                         patients. Null means no scoping (admin / demo).
+     * @return the matching patients plus a trace of what the execution did
      */
-    public List<PatientResult> execute(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
-        return run(plan, referenceDate, professionistaId).results();
-    }
-
-    /** Executes the plan and reports every step and every exclusion. */
     public Execution run(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
         Instant from = referenceDate.atZone(ZoneOffset.UTC)
                 .minusMonths(plan.windowMonths())
@@ -81,8 +77,9 @@ public class SmartQueryService {
 
         long t0 = System.nanoTime();
         List<NoteInsight> inWindow = professionistaId == null
-                ? insightRepository.findByDataBetween(from, referenceDate)
-                : insightRepository.findByProfessionistaIdAndDataBetween(professionistaId, from, referenceDate);
+                ? insightRepository.findByDataGreaterThanEqualAndDataLessThanEqual(from, referenceDate)
+                : insightRepository.findByProfessionistaIdAndDataGreaterThanEqualAndDataLessThanEqual(
+                        professionistaId, from, referenceDate);
         Map<ObjectId, List<NoteInsight>> allByPatient = inWindow.stream()
                 .collect(Collectors.groupingBy(NoteInsight::getPazienteId));
         Map<ObjectId, List<NoteInsight>> byPatient = inWindow.stream()
@@ -118,7 +115,7 @@ public class SmartQueryService {
         excluded.sort(Comparator.comparing(Exclusion::cognome, Comparator.nullsLast(Comparator.naturalOrder())));
         int matching = byPatient.values().stream().mapToInt(List::size).sum();
         return new Execution(List.copyOf(results), new Trace(insightsMs, inWindow.size(), matching,
-                allByPatient.size(), byPatient.size(), evaluationMs, List.copyOf(excluded)));
+                allByPatient.size(), evaluationMs, List.copyOf(excluded)));
     }
 
     private static Exclusion exclusion(ObjectId id, Map<String, Paziente> patients, String reason) {
@@ -153,15 +150,14 @@ public class SmartQueryService {
         // the requested body area: a patient improving on a different problem
         // (e.g. cervicalgia) must not pass a lumbar-improvement filter.
         int totalScore = insights.stream().mapToInt(NoteInsight::getImprovementScore).sum();
-        boolean hasPositiveNote = insights.stream()
-                .anyMatch(insight -> insight.getImprovementScore() > 0);
 
-        if (plan.requireImprovement() && !(totalScore > 0 && hasPositiveNote)) {
+        if (plan.requireImprovement() && totalScore <= 0) {
             return Outcome.dropped("nessun miglioramento nell'area richiesta (punteggio " + signed(totalScore)
                     + " su " + insights.size() + " note)");
         }
-        if (plan.requireWorsening() && totalScore >= 0) {
-            return Outcome.dropped("in miglioramento o senza segnali negativi (punteggio " + signed(totalScore)
+        // "non migliora" includes patients with no clear signal, not only those getting worse.
+        if (plan.requireWorsening() && totalScore > 0) {
+            return Outcome.dropped("in miglioramento nell'area richiesta (punteggio " + signed(totalScore)
                     + " su " + insights.size() + " note)");
         }
 

@@ -4,7 +4,7 @@ Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un profes
 
 > *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
 
-e ottiene in poche decine di millisecondi la lista dei pazienti corrispondenti, con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato: durante la ricerca non c'è nessuna chiamata AI.
+e ottiene la lista dei pazienti corrispondenti con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato. La ricerca sui testi non usa mai l'AI — le note sono già analizzate e indicizzate — quindi risponde in poche decine di millisecondi; l'AI entra solo per interpretare una domanda mai vista prima, una volta sola, entro un budget di tempo.
 
 **Stack**: Java 17 · Spring Boot 3.5 · Spring AI 1.1 · Gradle · MongoDB — allineato allo stack esistente di FisioDesk/Dottai, così i componenti descritti qui si integrano nel backend attuale senza introdurre un nuovo runtime (Spring Boot 3.5 è la linea che l'azienda usa oggi; Spring AI 1.1 è la versione che la supporta, la 2.0 richiede Boot 4). Frontend demo in HTML/JS statico servito dalla stessa applicazione.
 
@@ -180,11 +180,12 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 | `AI_INDEXER_RPM` | `0` (nessun ritmo) | massimo di chiamate LLM al minuto dell'indexer, da tenere sotto la quota del provider |
 | `GEMINI_API_KEY` | – | chiave Gemini, letta da `.env` dall'overlay `docker-compose.gemini.yml` |
 | `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
-| `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` nell'overlay Gemini) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
+| `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` negli overlay AI) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
 
 ## Troubleshooting
 
 - **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
+- **Mongo Express** (http://localhost:8081) è esposto senza password ma solo su `127.0.0.1`: è un comodo browser dei dati per la review, non va esposto altrove.
 - **Ripartire da zero**: `docker compose down -v && docker compose up -d --build` (dati demo re-importati e ri-indicizzati automaticamente).
 - **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
 - **Modalità AI locale lenta al primo avvio**: il download del modello è visibile con `docker logs fisiodesk-ollama-pull`; la prima analisi delle note su CPU richiede qualche minuto (`/api/stats` mostra `analyzedByLlm` crescere), nel frattempo le query rispondono con le analisi deterministiche.

@@ -20,7 +20,12 @@ public final class PlanGuardrail {
     private PlanGuardrail() {
     }
 
-    public static QueryPlan merge(QueryPlan llm, QueryPlan rules) {
+    /**
+     * @param explicitWindow true when the question states the time window in
+     *                       words ("ultimi 3 mesi"): the lexicon read it from
+     *                       the text, so it wins over the model's guess.
+     */
+    public static QueryPlan merge(QueryPlan llm, QueryPlan rules, boolean explicitWindow) {
         // Anatomical terms are a closed vocabulary where the lexicon is precise
         // and small models are not ("mal di schiena" has been seen mapped to
         // the shoulder); the model's areas only count when the lexicon found none.
@@ -31,10 +36,7 @@ public final class PlanGuardrail {
         boolean improvement = !worsening && (llm.requireImprovement() || rules.requireImprovement());
         boolean missedLast = llm.missedLastAppointment() || rules.missedLastAppointment();
 
-        // The window is only trusted from the rules when the question states
-        // it explicitly; otherwise the model's reading (or the default) stands.
-        int window = rules.windowMonths() != QueryPlan.DEFAULT_WINDOW_MONTHS
-                ? rules.windowMonths() : llm.windowMonths();
+        int window = explicitWindow ? rules.windowMonths() : llm.windowMonths();
 
         return new QueryPlan(areas, improvement, worsening, window, missedLast, llm.planner());
     }

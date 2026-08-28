@@ -62,6 +62,8 @@
     return parts;
   }
 
+  var STATO_LABELS = { no_show: "saltato", completato: "completato", prenotato: "prenotato", cancellato: "cancellato" };
+
   function renderSummary(data) {
     var n = data.results.length;
     summaryCount.textContent = n === 0 ? "Nessun paziente" : n === 1 ? "1 paziente" : n + " pazienti";
@@ -74,27 +76,20 @@
   }
 
   /* ---------- results ---------- */
-  function accentClass(ch) {
-    var map = { a: "aàá", e: "eèé", i: "iìí", o: "oòó", u: "uùú" };
-    return map[ch] ? "[" + map[ch] + "]" : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  /* Accent-tolerant highlight of the decisive terms inside a note excerpt. */
+  /* The API returns the decisive terms as literal substrings of the excerpt. */
   function highlighted(text, terms) {
     var node = el("div");
-    if (!terms || !terms.length) { node.textContent = text; return node; }
-    var pattern = terms.filter(Boolean).map(function (t) {
-      return t.toLowerCase().split("").map(accentClass).join("");
-    }).join("|");
-    var re = new RegExp("(" + pattern + ")", "gi");
-    var last = 0, m;
-    while ((m = re.exec(text)) !== null) {
-      if (m[0].length === 0) { re.lastIndex++; continue; }
-      node.appendChild(document.createTextNode(text.slice(last, m.index)));
-      node.appendChild(el("mark", null, m[0]));
-      last = m.index + m[0].length;
-    }
-    node.appendChild(document.createTextNode(text.slice(last)));
+    var spans = (terms || []).map(function (t) { return [text.indexOf(t), t.length]; })
+      .filter(function (s) { return s[0] >= 0; })
+      .sort(function (a, b) { return a[0] - b[0]; });
+    var at = 0;
+    spans.forEach(function (s) {
+      if (s[0] < at) return;                       // overlapping term already highlighted
+      node.appendChild(document.createTextNode(text.slice(at, s[0])));
+      node.appendChild(el("mark", null, text.substr(s[0], s[1])));
+      at = s[0] + s[1];
+    });
+    node.appendChild(document.createTextNode(text.slice(at)));
     return node;
   }
 
@@ -114,16 +109,18 @@
       var card = el("div", "patient-card");
       var head = el("div", "patient-head");
       var left = el("div");
-      left.appendChild(el("div", "patient-name", p.nome + " " + p.cognome));
+      left.appendChild(el("div", "patient-name", [p.nome, p.cognome].filter(Boolean).join(" ") || p.pazienteId));
       left.appendChild(el("div", "patient-info",
-        (p.eta ? p.eta + " anni · " : "") + (p.telefono || "") + (p.email ? " · " + p.email : "")));
+        [p.eta != null ? p.eta + " anni" : null, p.telefono, p.email].filter(Boolean).join(" · ")));
       head.appendChild(left);
       var badges = el("div", "badges");
       badges.appendChild(trendBadge(p.improvementScore));
       if (p.lastAppointment) {
         badges.appendChild(p.lastAppointment.stato === "no_show"
           ? el("span", "badge noshow", "Assente il " + fmtDate(p.lastAppointment.data))
-          : el("span", "badge", "Ultimo appuntamento: " + p.lastAppointment.stato + " (" + fmtDate(p.lastAppointment.data) + ")"));
+          : el("span", "badge", "Ultimo appuntamento " +
+              (STATO_LABELS[p.lastAppointment.stato] || p.lastAppointment.stato) +
+              " il " + fmtDate(p.lastAppointment.data)));
       }
       head.appendChild(badges);
       card.appendChild(head);
@@ -146,6 +143,11 @@
   /* ---------- explanation dialog ---------- */
   function renderExplain(data) {
     var ex = data.explain;
+    if (ex) {
+      ex.stages = ex.stages || [];
+      ex.clues = ex.clues || [];
+      ex.excluded = ex.excluded || [];
+    }
     explainOpen.classList.toggle("hidden", !ex);
     if (!ex) return;
 
@@ -208,9 +210,12 @@
   }
 
   /* ---------- actions ---------- */
+  var pending = 0;
+
   function runQuery() {
     var question = questionEl.value.trim();
-    if (!question) return;
+    if (!question) return Promise.resolve();
+    var token = ++pending;
     runBtn.disabled = true;
     runBtn.textContent = "Cerco…";
     return fetch("/api/query", {
@@ -225,20 +230,29 @@
         });
       })
       .then(function (data) {
+        if (token !== pending) return;             // a newer question is already on its way
         renderSummary(data);
         renderExplain(data);
         renderResults(data);
       })
-      .catch(function (err) { showError(err.message || "Servizio non raggiungibile"); })
+      .catch(function (err) {
+        if (token === pending) showError(err.message || "Servizio non raggiungibile");
+      })
       .finally(function () {
+        if (token !== pending) return;
         runBtn.disabled = false;
         runBtn.textContent = "Cerca";
       });
   }
 
+  function json(res) {
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return res.json();
+  }
+
   function loadProfessionisti() {
     return fetch("/api/professionisti")
-      .then(function (res) { return res.json(); })
+      .then(json)
       .then(function (list) {
         list.forEach(function (p) {
           var opt = document.createElement("option");
@@ -252,11 +266,13 @@
 
   function loadStats() {
     fetch("/api/stats")
-      .then(function (res) { return res.json(); })
+      .then(json)
       .then(function (s) {
         footerEl.textContent = s.notesIndexed + " note cliniche indicizzate · " +
-          (s.aiEnabled ? "analisi con AI (" + s.aiAnalysisModel + "), " + s.analyzedByLlm + " note" : "analisi a regole") +
-          (s.analyzedByHeuristic ? ", " + s.analyzedByHeuristic + " in attesa dell'AI" : "");
+          (s.aiEnabled
+            ? "analisi con AI (" + s.aiAnalysisModel + "): " + s.analyzedByLlm + " note" +
+              (s.analyzedByHeuristic ? ", " + s.analyzedByHeuristic + " ancora da rianalizzare" : "")
+            : "analisi con il lessico clinico");
       })
       .catch(function () { footerEl.textContent = "servizio non raggiungibile"; });
   }
@@ -281,7 +297,9 @@
   explainOpen.addEventListener("click", openExplain);
   explainClose.addEventListener("click", function () { explainDialog.close(); });
   explainDialog.addEventListener("click", function (e) {
-    if (e.target === explainDialog) explainDialog.close();
+    var box = explainDialog.getBoundingClientRect();
+    var outside = e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom;
+    if (outside) explainDialog.close();
   });
   clearCacheBtn.addEventListener("click", function () {
     clearCacheBtn.disabled = true;
@@ -301,7 +319,11 @@
     var q = params.get("q");
     if (!q) return;
     questionEl.value = q;
-    if (params.get("professionista")) professionistaEl.value = params.get("professionista");
+    var prof = params.get("professionista");
+    if (prof) {
+      professionistaEl.value = prof;
+      if (professionistaEl.value !== prof) toast("Professionista " + prof + " non presente nei dati: mostro tutti.");
+    }
     var done = runQuery();
     if (done && params.get("spiega")) done.then(function () { if (!explainOpen.classList.contains("hidden")) openExplain(); });
   }

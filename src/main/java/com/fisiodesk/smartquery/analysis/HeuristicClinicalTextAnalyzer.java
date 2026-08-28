@@ -31,7 +31,7 @@ public class HeuristicClinicalTextAnalyzer implements ClinicalTextAnalyzer {
 
         ClinicalLexicon.BODY_AREA_TERMS.forEach((area, terms) -> {
             for (String term : terms) {
-                if (normalized.contains(term)) {
+                if (ClinicalLexicon.containsTerm(normalized, term)) {
                     areas.add(area);
                     evidence.add("area:" + term.strip());
                     break;

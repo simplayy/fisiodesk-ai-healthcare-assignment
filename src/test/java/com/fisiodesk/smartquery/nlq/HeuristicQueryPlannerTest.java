@@ -50,6 +50,18 @@ class HeuristicQueryPlannerTest {
     }
 
     @Test
+    void negationIsCaughtEvenWithWordsInBetween() {
+        for (String question : new String[] {
+                "chi non ha ancora avuto miglioramenti?",
+                "pazienti che non hanno mostrato alcun miglioramento",
+                "pazienti con lombalgia senza alcun segno di miglioramento" }) {
+            QueryPlan plan = planner.plan(question);
+            assertThat(plan.requireWorsening()).as(question).isTrue();
+            assertThat(plan.requireImprovement()).as(question).isFalse();
+        }
+    }
+
+    @Test
     void explainsWhichWordsDroveEachField() {
         var clues = planner.explain(
                 "Mostra pazienti con dolore lombare che hanno mostrato miglioramento "

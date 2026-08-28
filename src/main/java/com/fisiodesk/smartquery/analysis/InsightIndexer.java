@@ -38,8 +38,11 @@ public class InsightIndexer {
     private final NoteInsightRepository insightRepository;
     private final TextAnalysisService analysisService;
     private final AiProperties aiProperties;
+    private static final int MAX_LLM_FAILURES = 3;
+
     private final long minIntervalNanos;
     private long lastLlmCallNanos;
+    private int llmFailures;
 
     /**
      * @param maxLlmCallsPerMinute pacing of the LLM calls made by this batch
@@ -66,6 +69,7 @@ public class InsightIndexer {
                fixedDelayString = "${smartquery.indexer.fixed-delay-ms:30000}")
     public void indexPendingNotes() {
         try {
+            llmFailures = 0;
             Map<String, NoteInsight> existing = insightRepository.findAll().stream()
                     .collect(Collectors.toMap(NoteInsight::getId, Function.identity()));
 
@@ -96,18 +100,32 @@ public class InsightIndexer {
             if (current != null && hash.equals(current.getTextHash()) && !shouldUpgrade(current)) {
                 continue;
             }
-            pace();
+            if (!pace()) {
+                break;
+            }
             ClinicalNoteAnalysis analysis = analysisService.analyze(note.getDescrizione());
             insightRepository.save(toInsight(id, source, note, hash, analysis));
             updated++;
+            // The LLM answered with the lexicon: the provider is failing. Give up
+            // for this cycle instead of retrying every note every 30 seconds.
+            if (aiProperties.enabled() && !LlmClinicalTextAnalyzer.NAME.equals(analysis.analyzer())
+                    && ++llmFailures >= MAX_LLM_FAILURES) {
+                log.warn("LLM unavailable after {} notes, retrying at the next cycle", llmFailures);
+                break;
+            }
         }
         return updated;
     }
 
-    /** Spaces LLM calls evenly so the batch never exceeds the configured rate. */
-    private void pace() {
+    /**
+     * Spaces LLM calls evenly so the batch never exceeds the configured rate.
+     *
+     * @return false when the thread was interrupted (shutdown): the caller stops
+     *         the batch instead of burning the remaining notes on doomed calls.
+     */
+    private boolean pace() {
         if (minIntervalNanos == 0 || !aiProperties.enabled()) {
-            return;
+            return true;
         }
         long waitNanos = lastLlmCallNanos + minIntervalNanos - System.nanoTime();
         if (waitNanos > 0) {
@@ -115,9 +133,11 @@ public class InsightIndexer {
                 Thread.sleep(waitNanos / 1_000_000, (int) (waitNanos % 1_000_000));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                return false;
             }
         }
         lastLlmCallNanos = System.nanoTime();
+        return true;
     }
 
     /**

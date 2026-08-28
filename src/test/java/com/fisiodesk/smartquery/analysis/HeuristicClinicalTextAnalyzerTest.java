@@ -20,6 +20,13 @@ class HeuristicClinicalTextAnalyzerTest {
     }
 
     @Test
+    void bodyAreaTermsMatchWholeWordsOnly() {
+        assertThat(analyzer.analyze("La paziente e stanca, riferisce mancanza di forza").bodyAreas()).isEmpty();
+        assertThat(analyzer.analyze("Dolore all'anca destra").bodyAreas()).containsExactly(BodyArea.HIP);
+        assertThat(analyzer.analyze("Dolore alle spalle").bodyAreas()).containsExactly(BodyArea.SHOULDER);
+    }
+
+    @Test
     void recognizesLumbarSynonyms() {
         assertThat(analyzer.analyze("Paziente con lombalgia acuta").bodyAreas())
                 .contains(BodyArea.LUMBAR);

@@ -53,18 +53,18 @@ public class TextAnalysisService {
      * the lexicon found none. For the clinical trend the model is trusted
      * unless the lexicon found explicit markers pointing the other way or the
      * model saw no signal at all - "situazione stazionaria" or "non migliora"
-     * must never be neutralised. Evidence always comes from the model.
+     * must never be neutralised. The evidence shown always comes from whoever
+     * decided the score, so the excerpt never contradicts the badge.
      */
     static ClinicalNoteAnalysis merge(ClinicalNoteAnalysis llm, ClinicalNoteAnalysis lexical) {
         Set<BodyArea> areas = lexical.bodyAreas().isEmpty() ? llm.bodyAreas() : lexical.bodyAreas();
 
-        int score = llm.improvementScore();
         boolean lexiconDisagrees = lexical.improvementScore() != 0
-                && Integer.signum(lexical.improvementScore()) != Integer.signum(score);
+                && Integer.signum(lexical.improvementScore()) != Integer.signum(llm.improvementScore());
         if (lexiconDisagrees) {
-            score = lexical.improvementScore();
+            return new ClinicalNoteAnalysis(areas, lexical.improvementScore(), lexical.evidence(), llm.analyzer());
         }
-        return new ClinicalNoteAnalysis(areas, score, llm.evidence(), llm.analyzer());
+        return new ClinicalNoteAnalysis(areas, llm.improvementScore(), llm.evidence(), llm.analyzer());
     }
 
     /** Stable fingerprint of the note text, used to skip re-analysis of unchanged notes. */

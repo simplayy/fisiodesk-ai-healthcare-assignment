@@ -6,6 +6,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -29,6 +31,17 @@ public class ApiExceptionHandler {
     public ResponseEntity<Map<String, String>> handleDate(DateTimeParseException e) {
         return ResponseEntity.badRequest()
                 .body(Map.of("error", "Data di riferimento non valida, formato atteso yyyy-MM-dd"));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, String>> handleUnreadable(HttpMessageNotReadableException e) {
+        return ResponseEntity.badRequest().body(Map.of("error", "Corpo della richiesta non valido, atteso JSON"));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, String>> handleMethod(HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(Map.of("error", "Metodo " + e.getMethod() + " non supportato su questo endpoint"));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

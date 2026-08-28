@@ -77,6 +77,12 @@ Un risultato clinico non deve essere opaco. La risposta porta con sé il traccia
 - **Correlazione nel service invece di una `$lookup` a tre stadi.** Query indicizzate mirate su insights, calendario e anagrafica: più leggibile e testabile, qualche round-trip in più (irrilevante a questi volumi; con volumi reali il candidato è una `$lookup` singola o una vista per professionista).
 - **Provider Gemini nell'overlay**: modello per il planner e modello separato per l'analisi delle note perché le quote del provider sono per modello; indexer ritmato sotto la quota (`AI_INDEXER_RPM`); budget del planner 1,8 s. Sul piano gratuito (15 richieste/min per modello) il planner copre 15 domande nuove al minuto; oltre serve il piano a pagamento, non codice.
 
+## Limiti noti
+
+- **I candidati vengono dalle note.** Una domanda puramente di calendario ("chi ha saltato l'ultimo appuntamento?") considera solo i pazienti che hanno almeno una nota nella finestra: chi non è più in cura da mesi non compare. È coerente con l'idea del sistema (ricerca clinica, non gestione agenda), ma per una domanda di sola compliance servirebbe partire da `eventi_calendario`.
+- **Cancellazioni non riconciliate.** Se una nota viene eliminata dal gestionale, il suo documento in `note_insights` resta. L'indexer confronta solo ciò che esiste; una passata di pulizia è un `deleteMany` sugli id non più presenti.
+- **Modello locale e budget del planner.** Con Ollama su CPU una domanda nuova supera quasi sempre il budget: la risposta arriva dal parser a regole e il piano dell'LLM viene usato dalla volta successiva. È il comportamento previsto, ma va detto: la modalità locale mostra il valore dell'LLM sulle *note*, non sull'interpretazione in tempo reale.
+
 ## Percorso di crescita (non implementato, per la call)
 
 - **Freshness**: sostituire il polling a 30s con MongoDB change streams sulle collections sorgente.

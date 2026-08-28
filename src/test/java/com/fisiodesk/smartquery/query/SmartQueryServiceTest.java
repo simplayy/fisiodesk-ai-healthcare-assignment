@@ -61,7 +61,7 @@ class SmartQueryServiceTest {
     void setUp() {
         service = new SmartQueryService(insightRepository, eventoRepository, pazienteRepository);
 
-        when(insightRepository.findByDataBetween(any(), any())).thenReturn(List.of(
+        when(insightRepository.findByDataGreaterThanEqualAndDataLessThanEqual(any(), any())).thenReturn(List.of(
                 insight(improvingNoShow, "2024-11-15", Set.of("LUMBAR"), 2),
                 insight(improvingNoShow, "2024-12-01", Set.of("LUMBAR"), 2),
                 insight(notImproving, "2024-10-25", Set.of("LUMBAR"), -3),
@@ -89,7 +89,7 @@ class SmartQueryServiceTest {
     void targetQueryReturnsOnlyImprovingLumbarNoShows() {
         QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, true, "test");
 
-        List<PatientResult> results = service.execute(plan, REFERENCE);
+        List<PatientResult> results = service.run(plan, REFERENCE, null).results();
 
         assertThat(results)
                 .extracting(PatientResult::cognome)
@@ -100,7 +100,7 @@ class SmartQueryServiceTest {
     void worseningFilterReturnsTheNonImprovingPatient() {
         QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), false, true, 3, false, "test");
 
-        List<PatientResult> results = service.execute(plan, REFERENCE);
+        List<PatientResult> results = service.run(plan, REFERENCE, null).results();
 
         assertThat(results)
                 .extracting(PatientResult::cognome)
@@ -111,7 +111,7 @@ class SmartQueryServiceTest {
     void withoutAreaFilterAllPatientsWithRecentNotesAreConsidered() {
         QueryPlan plan = new QueryPlan(EnumSet.noneOf(BodyArea.class), false, false, 3, false, "test");
 
-        List<PatientResult> results = service.execute(plan, REFERENCE);
+        List<PatientResult> results = service.run(plan, REFERENCE, null).results();
 
         assertThat(results).hasSize(4);
     }
@@ -122,7 +122,7 @@ class SmartQueryServiceTest {
         // must not include him even without the no-show filter.
         QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "test");
 
-        List<PatientResult> results = service.execute(plan, REFERENCE);
+        List<PatientResult> results = service.run(plan, REFERENCE, null).results();
 
         assertThat(results)
                 .extracting(PatientResult::cognome)
@@ -150,14 +150,14 @@ class SmartQueryServiceTest {
     @Test
     void professionalScopeOnlyReadsThatProfessionalsNotes() {
         ObjectId professionista = new ObjectId();
-        when(insightRepository.findByProfessionistaIdAndDataBetween(eq(professionista), any(), any()))
+        when(insightRepository.findByProfessionistaIdAndDataGreaterThanEqualAndDataLessThanEqual(eq(professionista), any(), any()))
                 .thenReturn(List.of(insight(improvingNoShow, "2024-11-15", Set.of("LUMBAR"), 2)));
         QueryPlan plan = new QueryPlan(EnumSet.noneOf(BodyArea.class), false, false, 3, false, "test");
 
-        List<PatientResult> results = service.execute(plan, REFERENCE, professionista);
+        List<PatientResult> results = service.run(plan, REFERENCE, professionista).results();
 
         assertThat(results).extracting(PatientResult::cognome).containsExactly("Rossi");
-        verify(insightRepository, never()).findByDataBetween(any(), any());
+        verify(insightRepository, never()).findByDataGreaterThanEqualAndDataLessThanEqual(any(), any());
     }
 
     private NoteInsight insight(ObjectId patient, String date, Set<String> areas, int score) {

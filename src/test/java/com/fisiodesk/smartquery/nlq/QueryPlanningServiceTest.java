@@ -64,7 +64,7 @@ class QueryPlanningServiceTest {
         });
 
         long start = System.currentTimeMillis();
-        QueryPlan first = service(true, 200).plan(QUESTION);
+        QueryPlan first = service(true, 200).planWithOrigin(QUESTION).plan();
         long elapsed = System.currentTimeMillis() - start;
 
         assertThat(first.planner()).isEqualTo("heuristic");
@@ -83,7 +83,7 @@ class QueryPlanningServiceTest {
         ExecutorService clients = Executors.newFixedThreadPool(5);
         try {
             List<Future<QueryPlan>> calls = IntStream.range(0, 5)
-                    .mapToObj(i -> clients.submit(() -> service.plan(QUESTION)))
+                    .mapToObj(i -> clients.submit(() -> service.planWithOrigin(QUESTION).plan()))
                     .toList();
             for (Future<QueryPlan> call : calls) {
                 assertThat(call.get().planner()).isEqualTo("heuristic");
@@ -102,7 +102,7 @@ class QueryPlanningServiceTest {
         when(llmPlanner.plan(anyString())).thenReturn(
                 new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "llm"));
 
-        QueryPlan plan = service(true, 1000).plan(QUESTION);
+        QueryPlan plan = service(true, 1000).planWithOrigin(QUESTION).plan();
 
         assertThat(plan.planner()).isEqualTo("llm");
         assertThat(plan.missedLastAppointment()).isTrue();
@@ -114,7 +114,7 @@ class QueryPlanningServiceTest {
     void failingLlmPlannerFallsBackToRules() {
         when(llmPlanner.plan(anyString())).thenThrow(new IllegalStateException("boom"));
 
-        QueryPlan plan = service(true, 1000).plan(QUESTION);
+        QueryPlan plan = service(true, 1000).planWithOrigin(QUESTION).plan();
 
         assertThat(plan.planner()).isEqualTo("heuristic");
         assertThat(plan.bodyAreas()).containsExactly(BodyArea.LUMBAR);
@@ -123,7 +123,7 @@ class QueryPlanningServiceTest {
 
     @Test
     void disabledLlmNeverCallsThePlanner() {
-        QueryPlan plan = service(false, 1000).plan(QUESTION);
+        QueryPlan plan = service(false, 1000).planWithOrigin(QUESTION).plan();
 
         assertThat(plan.planner()).isEqualTo("heuristic");
         verify(llmPlanner, never()).plan(anyString());

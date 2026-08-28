@@ -27,9 +27,14 @@ public class HeuristicQueryPlanner implements QueryPlanner {
     private static final Pattern WINDOW_SINGLE_PATTERN =
             Pattern.compile("ultimo\\s+mese");
 
-    /** Catches "non migliora", "non mostrano miglioramento", "nessun miglioramento"... */
+    /**
+     * Catches "non migliora", "non mostrano miglioramento", "nessun segno di
+     * miglioramento", "non ha ancora avuto miglioramenti". Three intervening
+     * words cover the phrasings people actually type; more than that and a
+     * negation usually belongs to another part of the sentence.
+     */
     private static final Pattern NEGATED_IMPROVEMENT_PATTERN =
-            Pattern.compile("(non|senza|nessun)\\s+(\\w+\\s+){0,2}miglior");
+            Pattern.compile("(non|senza|nessun\\w*)\\s+(\\w+\\s+){0,3}miglior");
 
     private record Analysis(QueryPlan plan, List<PlanClue> clues) {
     }
@@ -51,7 +56,7 @@ public class HeuristicQueryPlanner implements QueryPlanner {
         Set<BodyArea> areas = EnumSet.noneOf(BodyArea.class);
         ClinicalLexicon.BODY_AREA_TERMS.forEach((area, terms) -> {
             for (String term : terms) {
-                if (q.contains(term)) {
+                if (ClinicalLexicon.containsTerm(q, term)) {
                     areas.add(area);
                     clues.add(new PlanClue("bodyAreas", snippet(q, term), area.name()));
                     break;

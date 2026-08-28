@@ -53,9 +53,6 @@ public class QueryFacade {
         this.configuredReferenceDate = configuredReferenceDate;
     }
 
-    public QueryResponse answer(String question, String referenceDateOverride) {
-        return answer(question, referenceDateOverride, null);
-    }
 
     /**
      * @param professionistaId optional scope: only this professional's notes.
@@ -97,15 +94,18 @@ public class QueryFacade {
     private ExplainView explain(PlanOutcome planned, ReferenceDate referenceDate,
                                 SmartQueryService.Execution execution, long tookMs) {
         SmartQueryService.Trace trace = execution.trace();
+        boolean aiInThisRequest = planned.origin() == PlanOutcome.Origin.LLM;
         List<StageView> stages = List.of(
                 new StageView("Interpretazione della domanda", planned.planMs(), planned.origin().label()),
                 new StageView("Ricerca nelle note indicizzate", trace.insightsMs(),
-                        trace.notesInWindow() + " note nella finestra, " + trace.notesMatchingArea()
+                        trace.notesInWindow() + " note nel periodo, " + trace.notesMatchingArea()
                                 + " sull'area richiesta, " + trace.patientsInWindow() + " pazienti"),
                 new StageView("Valutazione dei pazienti", trace.evaluationMs(),
-                        trace.patientsEvaluated() + " valutati, " + execution.results().size() + " inclusi, "
-                                + trace.excluded().size() + " esclusi"),
-                new StageView("Totale", tookMs, "nessuna chiamata AI durante la ricerca"));
+                        trace.patientsInWindow() + " pazienti valutati, " + execution.results().size()
+                                + " inclusi, " + trace.excluded().size() + " esclusi"),
+                new StageView("Totale", tookMs, aiInThisRequest
+                        ? "di cui " + planned.planMs() + " ms di attesa dell'AI; la ricerca sulle note non ne usa"
+                        : "nessuna chiamata AI in questa richiesta"));
         return new ExplainView(
                 planned.origin().name(),
                 planned.origin().label(),

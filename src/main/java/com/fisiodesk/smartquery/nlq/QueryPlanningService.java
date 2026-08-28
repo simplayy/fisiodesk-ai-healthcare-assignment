@@ -62,9 +62,6 @@ public class QueryPlanningService {
         this.planRepository = planRepository;
     }
 
-    public QueryPlan plan(String question) {
-        return planWithOrigin(question).plan();
-    }
 
     /** Plans the question and reports where the plan came from and how long it took. */
     public PlanOutcome planWithOrigin(String question) {
@@ -147,10 +144,12 @@ public class QueryPlanningService {
     }
 
     private CompletableFuture<QueryPlan> llmPlanAsync(String key, String question) {
+        boolean explicitWindow = heuristicPlanner.explain(question).stream()
+                .anyMatch(clue -> "windowMonths".equals(clue.field()));
         return inFlight.computeIfAbsent(key, k -> {
             long start = System.nanoTime();
             CompletableFuture<QueryPlan> future = CompletableFuture.supplyAsync(
-                    () -> PlanGuardrail.merge(llmPlanner.plan(question), heuristicPlanner.plan(question)),
+                    () -> PlanGuardrail.merge(llmPlanner.plan(question), heuristicPlanner.plan(question), explicitWindow),
                     llmExecutor);
             future.whenComplete((plan, error) -> {
                 inFlight.remove(k);
