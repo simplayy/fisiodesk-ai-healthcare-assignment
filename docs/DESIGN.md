@@ -74,7 +74,7 @@ Un documento per ogni nota analizzata.
 }
 ```
 
-L'id è costruito, non casuale: rianalizzare una nota sovrascrive il documento invece di duplicarlo. L'impronta del testo serve a capire se la nota è stata modificata: se è uguale, la nota viene saltata e non costa una chiamata all'AI.
+L'id è costruito, non casuale: rianalizzare una nota sovrascrive il documento invece di duplicarlo. L'impronta serve a capire se la nota è cambiata: se è uguale, la nota viene saltata e non costa una chiamata.
 
 Indici su `data`, `(paziente_id, data)` e `(professionista_id, data)`, più `(paziente_id, data)` su `eventi_calendario`, che rende immediata la ricerca dell'ultimo appuntamento di un paziente.
 
@@ -110,17 +110,17 @@ Il blocco `explain` è costruito da quello che il sistema ha fatto davvero, senz
 - da dove viene la data usata come "oggi";
 - ogni paziente escluso con il motivo: "nessun miglioramento nell'area richiesta (punteggio -7 su 4 note)", "ultimo appuntamento prenotato il 28/12/2024, non saltato".
 
-Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ricerca e sarebbe meno affidabile dei dati. Nell'interfaccia si apre dal link "Come è nato il risultato". Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
+Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ricerca e sarebbe meno affidabile dei dati. Si apre dal link "Come è nato il risultato", e si può linkare una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
 
 ## Come è integrata l'AI
 
-- **Libreria**: Spring AI 1.1. Parla il protocollo delle API OpenAI, che è ormai lo standard: lo stesso codice va con OpenAI, Gemini, OpenRouter, Azure o un modello installato in azienda. L'ultimo caso in sanità conta, perché i testi clinici possono non poter uscire dall'infrastruttura.
+- **Libreria**: Spring AI 1.1. Parla il protocollo delle API OpenAI, ormai lo standard, quindi lo stesso codice va con OpenAI, Gemini, OpenRouter, Azure o un modello installato in azienda. L'ultimo caso in sanità conta: i testi clinici possono non poter uscire dall'infrastruttura.
 - **Risposta a formato fisso**: al modello non si chiede testo libero ma di riempire dei campi prestabiliti, definiti da uno schema generato dal codice Java. Può sbagliare il contenuto, non la forma.
 - **Dove interviene**: quando legge una nota in indicizzazione, e quando traduce una domanda mai vista in un filtro. Il filtro viene salvato, quindi succede una volta per domanda.
 - **Costo**: proporzionale alle note scritte e alle domande diverse, non alle ricerche. Mille professionisti con venti note al giorno fanno circa ventimila chiamate brevi al giorno.
-- **Quote del fornitore**: si contano le richieste al minuto, e si contano per modello. Per questo l'indicizzazione può usare un modello diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande dei professionisti.
+- **Quote del fornitore**: le richieste al minuto si contano per modello, quindi l'indicizzazione può usarne uno diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande.
 - **Tempo massimo di attesa**: 1,5 secondi, 1,8 con Gemini. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo.
-- **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata. Fino a 16 chiamate contemporanee, così una raffica di domande diverse non si accoda. Le domande suggerite sono già interpretate all'avvio, dove si fanno anche alcune chiamate a vuoto per scaldare il collegamento: la prima dopo un riavvio costa circa 0,8 secondi in più solo per aprire la connessione.
+- **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata, e fino a 16 chiamate possono partire insieme, così una raffica non si accoda. Le domande suggerite sono già interpretate all'avvio, insieme a qualche chiamata a vuoto per scaldare il collegamento: la prima dopo un riavvio costa 0,8 secondi in più solo per aprire la connessione.
 - **HTTP/1.1 forzato**: con HTTP/2 il client Java mandava tutte le chiamate su una connessione sola e il fornitore le serviva in fila. Dieci domande insieme tornavano a scaglioni e l'ultima sforava.
 - **Controllo sull'AI**: le aree trovate dal dizionario hanno la precedenza, i filtri espliciti che riconosce vengono aggiunti, e in contrasto "peggioramento" vince su "miglioramento". Su dieci domande di prova il modello piccolo in locale da solo ne prende sei, col controllo dieci. Con Gemini erano dieci già da solo.
 - **Guasti**: tempo massimo, un secondo tentativo, poi il dizionario. Le note lette dal dizionario vengono rilette quando l'AI torna. Niente da riattivare a mano.
