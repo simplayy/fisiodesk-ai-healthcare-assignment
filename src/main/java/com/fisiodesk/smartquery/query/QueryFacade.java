@@ -1,13 +1,9 @@
 package com.fisiodesk.smartquery.query;
 
 import com.fisiodesk.smartquery.analysis.BodyArea;
-import com.fisiodesk.smartquery.llm.LlmClient;
-import com.fisiodesk.smartquery.llm.LlmException;
-import com.fisiodesk.smartquery.nlq.HeuristicQueryPlanner;
-import com.fisiodesk.smartquery.nlq.LlmQueryPlanner;
 import com.fisiodesk.smartquery.nlq.QueryPlan;
+import com.fisiodesk.smartquery.nlq.QueryPlanningService;
 import com.fisiodesk.smartquery.query.QueryDtos.Meta;
-import com.fisiodesk.smartquery.query.QueryDtos.PatientResult;
 import com.fisiodesk.smartquery.query.QueryDtos.PlanView;
 import com.fisiodesk.smartquery.query.QueryDtos.QueryResponse;
 import com.fisiodesk.smartquery.repository.EventoCalendarioRepository;
@@ -19,25 +15,18 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.stream.Collectors;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 /**
  * Entry point for the API layer: resolves the reference date, plans the
- * query (LLM first, heuristic fallback) and serves repeated questions from a
- * short-lived in-memory cache. With insights pre-computed, a cache hit is
- * O(1) and a miss is a couple of indexed MongoDB queries.
+ * question, executes the plan and serves repeated questions from a
+ * short-lived in-memory cache.
  */
 @Service
 public class QueryFacade {
 
-    private static final Logger log = LoggerFactory.getLogger(QueryFacade.class);
-
-    private final LlmQueryPlanner llmPlanner;
-    private final HeuristicQueryPlanner heuristicPlanner;
-    private final LlmClient llmClient;
+    private final QueryPlanningService planningService;
     private final SmartQueryService queryService;
     private final EventoCalendarioRepository eventoRepository;
     private final String configuredReferenceDate;
@@ -47,25 +36,11 @@ public class QueryFacade {
             .expireAfterWrite(Duration.ofSeconds(60))
             .build();
 
-    /**
-     * Plans are cached longer than responses: the interpretation of a question
-     * does not depend on the data, so repeated questions skip the LLM planner
-     * entirely (the main latency/cost driver when one is configured).
-     */
-    private final Cache<String, QueryPlan> planCache = Caffeine.newBuilder()
-            .maximumSize(5_000)
-            .expireAfterWrite(Duration.ofMinutes(30))
-            .build();
-
-    public QueryFacade(LlmQueryPlanner llmPlanner,
-                       HeuristicQueryPlanner heuristicPlanner,
-                       LlmClient llmClient,
+    public QueryFacade(QueryPlanningService planningService,
                        SmartQueryService queryService,
                        EventoCalendarioRepository eventoRepository,
                        @Value("${smartquery.reference-date:}") String configuredReferenceDate) {
-        this.llmPlanner = llmPlanner;
-        this.heuristicPlanner = heuristicPlanner;
-        this.llmClient = llmClient;
+        this.planningService = planningService;
         this.queryService = queryService;
         this.eventoRepository = eventoRepository;
         this.configuredReferenceDate = configuredReferenceDate;
@@ -73,7 +48,7 @@ public class QueryFacade {
 
     public QueryResponse answer(String question, String referenceDateOverride) {
         Instant referenceDate = resolveReferenceDate(referenceDateOverride);
-        String cacheKey = normalize(question) + "|" + referenceDate;
+        String cacheKey = question.trim().toLowerCase(Locale.ITALIAN) + "|" + referenceDate;
 
         QueryResponse cached = responseCache.getIfPresent(cacheKey);
         if (cached != null) {
@@ -81,28 +56,14 @@ public class QueryFacade {
         }
 
         long start = System.nanoTime();
-        QueryPlan plan = planCache.get(normalize(question), this::plan);
+        QueryPlan plan = planningService.plan(question);
         var results = queryService.execute(plan, referenceDate);
         long tookMs = (System.nanoTime() - start) / 1_000_000;
 
         QueryResponse response = new QueryResponse(
-                question,
-                toView(plan, referenceDate),
-                results,
-                new Meta(tookMs, false, referenceDate));
+                question, toView(plan, referenceDate), results, new Meta(tookMs, false, referenceDate));
         responseCache.put(cacheKey, response);
         return response;
-    }
-
-    private QueryPlan plan(String question) {
-        if (llmClient.isEnabled()) {
-            try {
-                return llmPlanner.plan(question);
-            } catch (LlmException e) {
-                log.warn("LLM planner unavailable, using heuristic parser: {}", e.getMessage());
-            }
-        }
-        return heuristicPlanner.plan(question);
     }
 
     /**
@@ -114,8 +75,7 @@ public class QueryFacade {
         String candidate = (override != null && !override.isBlank())
                 ? override : configuredReferenceDate;
         if (candidate != null && !candidate.isBlank()) {
-            return LocalDate.parse(candidate.trim()).atTime(23, 59, 59)
-                    .toInstant(ZoneOffset.UTC);
+            return LocalDate.parse(candidate.trim()).atTime(23, 59, 59).toInstant(ZoneOffset.UTC);
         }
         return eventoRepository.findFirstByOrderByDataDesc()
                 .map(event -> event.getData())
@@ -123,9 +83,7 @@ public class QueryFacade {
     }
 
     private PlanView toView(QueryPlan plan, Instant referenceDate) {
-        Instant from = referenceDate.atZone(ZoneOffset.UTC)
-                .minusMonths(plan.windowMonths())
-                .toInstant();
+        Instant from = referenceDate.atZone(ZoneOffset.UTC).minusMonths(plan.windowMonths()).toInstant();
         return new PlanView(
                 plan.bodyAreas().stream().map(BodyArea::name).collect(Collectors.toSet()),
                 plan.requireImprovement(),
@@ -135,9 +93,5 @@ public class QueryFacade {
                 plan.planner(),
                 from,
                 referenceDate);
-    }
-
-    private String normalize(String question) {
-        return question.trim().toLowerCase(Locale.ITALIAN).replaceAll("\\s+", " ");
     }
 }
