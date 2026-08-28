@@ -53,10 +53,14 @@ Il punteggio è la somma dei match (clamp a ±3) e ogni match finisce nel campo 
 
 ## Integrazione LLM
 
-- **Protocollo**: chat-completions OpenAI-compatibile → lo stesso client funziona con OpenAI, OpenRouter, Azure o Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura).
-- **Dove**: (1) analisi nota in fase di indicizzazione; (2) traduzione domanda→piano, unica chiamata per query, prompt corto, su testo non clinico.
-- **Budget**: il costo è O(note scritte), non O(query). 1.000 professionisti × 20 note/giorno ≈ 20k chiamate corte/giorno, batchabili e con modello economico; le query sono gratis lato AI.
-- **Guasti**: timeout stretti, fallback deterministico per chiamata, upgrade automatico (una tantum) delle note analizzate col fallback quando l'LLM torna su. Nessun circuito manuale da riarmare.
+- **Libreria**: Spring AI 1.1 (starter OpenAI). Il client parla il protocollo chat-completions, quindi lo stesso codice funziona con OpenAI, OpenRouter, Azure o un Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura). Retry, timeout e serializzazione sono della libreria, non fatti in casa.
+- **Structured output**: l'output del modello è vincolato a uno schema JSON generato dai record Java (`BeanOutputConverter` + `response_format: json_schema`). Il modello può sbagliare il *significato*, non la *forma*: niente parsing difensivo, niente valori fuori enum.
+- **Dove**: (1) analisi nota in fase di indicizzazione; (2) traduzione domanda→piano, una sola volta per domanda distinta (il piano non dipende dai dati ed è memorizzato in `query_plans`).
+- **Budget**: il costo è O(note scritte + domande distinte), non O(query). 1.000 professionisti × 20 note/giorno ≈ 20k chiamate corte/giorno, batchabili e con modello economico.
+- **Latenza**: il planner ha un budget (`plan-timeout-ms`, 1,5 s). Oltre, la richiesta è servita col piano a regole mentre l'LLM completa in background e il piano viene salvato; richieste concorrenti per la stessa domanda condividono una sola chiamata; le domande suggerite sono pre-pianificate all'avvio.
+- **Guardrail lessicale**: il piano LLM viene fuso con quello a regole — le aree anatomiche del lessico prevalgono (vocabolario chiuso, il lessico è preciso), i flag espliciti trovati dal lessico vengono aggiunti, "peggioramento" vince su "miglioramento" in caso di contrasto. Su un set di 10 domande di controllo il modello locale da 1.5B da solo ne interpreta correttamente 6 (sbaglia "guariti", "sta meglio", una negazione, un'area); con il guardrail sono tutte corrette. Con un modello più capace il guardrail è neutro.
+- **Guasti**: timeout, un retry, fallback deterministico per chiamata, upgrade automatico (una tantum) delle note analizzate col fallback quando l'LLM torna su. Nessun circuito manuale da riarmare.
+- **Scelta del modello locale**: `qwen2.5:1.5b` per girare su CPU e 8 GB di RAM insieme a MongoDB; la famiglia Qwen è tra le più solide in italiano. Con più risorse (GPU) il candidato naturale è Qwen3 8B: basta cambiare `AI_MODEL`.
 
 ## Percorso di crescita (non implementato, per la call)
 
