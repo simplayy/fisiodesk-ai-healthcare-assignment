@@ -17,26 +17,25 @@
           <div class="brand-sub">Query intelligenti sui dati clinici</div>
         </div>
       </div>
-      <div class="status" id="status">connessione…</div>
+      <div class="topbar-tools">
+        <label class="scope">
+          <span>Professionista</span>
+          <select id="professionista">
+            <option value="">Tutti</option>
+          </select>
+        </label>
+        <button id="clear-cache" type="button" class="link-btn" title="Svuota le risposte in cache e i piani memorizzati: la prossima domanda passa di nuovo dall'AI">Svuota cache</button>
+      </div>
     </div>
   </header>
 
   <main class="container">
     <section class="search-card">
-      <label for="question" class="search-label">Fai una domanda sui tuoi pazienti</label>
       <div class="search-row">
-        <textarea id="question" rows="2" placeholder="Es. Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento">Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento</textarea>
+        <textarea id="question" rows="2" placeholder="Fai una domanda sui tuoi pazienti">Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento</textarea>
         <button id="run" type="button">Cerca</button>
       </div>
-      <div class="scope-row">
-        <label for="professionista">Professionista</label>
-        <select id="professionista">
-          <option value="">Tutti (vista amministrativa)</option>
-        </select>
-        <button id="clear-cache" type="button" class="chip chip-action" title="Svuota risposte in cache e piani memorizzati: la prossima domanda passa di nuovo dall'AI">Svuota cache</button>
-      </div>
       <div class="examples">
-        <span>Esempi:</span>
         <button class="chip" data-q="Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento">query target</button>
         <button class="chip" data-q="Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi">lombalgia senza miglioramento</button>
         <button class="chip" data-q="Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi">cervicalgia in miglioramento</button>
@@ -44,39 +43,41 @@
       </div>
     </section>
 
-    <section id="plan-box" class="plan-box hidden">
-      <div class="plan-title">Come ho interpretato la domanda</div>
-      <div id="plan-chips" class="plan-chips"></div>
-    </section>
-
-    <section id="explain-box" class="explain hidden">
-      <div class="explain-head">
-        <div class="plan-title">Come è nato questo risultato</div>
-        <span id="explain-total" class="results-meta"></span>
+    <section id="summary" class="summary hidden">
+      <div class="summary-left">
+        <span id="summary-count" class="summary-count"></span>
+        <span id="summary-plan" class="summary-plan"></span>
       </div>
-      <ol id="pipeline" class="pipeline"></ol>
-      <div class="explain-grid">
-        <div>
-          <div class="explain-sub">Parole della domanda riconosciute dal lessico</div>
-          <div id="clues" class="clues"></div>
-        </div>
-        <div>
-          <div class="explain-sub">Contesto</div>
-          <ul id="context" class="context"></ul>
-        </div>
-      </div>
-      <details id="excluded-box" class="excluded" open>
-        <summary id="excluded-summary"></summary>
-        <ul id="excluded"></ul>
-      </details>
+      <button id="explain-open" type="button" class="link-btn accent">Come è nato il risultato</button>
     </section>
 
     <section id="results"></section>
-    <div id="toast" class="toast hidden"></div>
   </main>
 
-  <footer class="container footer" id="footer"></footer>
+  <dialog id="explain" class="explain" tabindex="-1">
+    <div class="explain-head">
+      <h2>Come è nato questo risultato</h2>
+      <button id="explain-close" type="button" class="icon-btn" aria-label="Chiudi">×</button>
+    </div>
+    <p id="explain-question" class="explain-question"></p>
 
+    <h3>Percorso</h3>
+    <ol id="pipeline" class="pipeline"></ol>
+
+    <h3>Interpretazione della domanda</h3>
+    <div id="clues" class="clues"></div>
+
+    <h3>Contesto</h3>
+    <ul id="context" class="context"></ul>
+
+    <div id="excluded-block" class="hidden">
+      <h3 id="excluded-title"></h3>
+      <ul id="excluded" class="excluded"></ul>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <footer class="container footer" id="footer"></footer>
   <script src="app.js"></script>
 </body>
 </html>
