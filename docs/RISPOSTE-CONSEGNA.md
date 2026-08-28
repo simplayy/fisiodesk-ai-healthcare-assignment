@@ -36,21 +36,21 @@ Prende il suo posto il dizionario, sia sulle note sia sulle domande, e il sistem
 
 ## 2. Progettazione della Soluzione
 
-### Data Strategy
+### Data Strategy (Come organizzi i dati per query efficienti)
 
-**Come gestisci i testi liberi per query veloci?**
+**Come gestisci i testi liberi per query veloci? (non puoi fare AI su tutto ogni volta)**
 
 Li trasformo una volta sola in due dati piccoli, aree anatomiche e punteggio, e cerco su quelli. Il testo resta solo come estratto da mostrare al professionista.
 
-**Dove e quando processi con AI?**
+**Dove e quando processi con AI? (real-time vs batch preprocessing)**
 
 In batch. [InsightIndexer](../src/main/java/com/fisiodesk/smartquery/analysis/InsightIndexer.java) parte all'avvio e poi ogni 30 secondi, e manda all'AI solo le note nuove o modificate. In tempo reale c'è solo l'interpretazione di una domanda mai vista.
 
-**Come memorizzi/organizzi i risultati?**
+**Come memorizzi/organizzi i risultati? (nuove collections, cache, indici)**
 
 Due collection nuove: `note_insights` (un documento per nota, `_id` uguale a `collection:id_nota`, così rianalizzare è una sovrascrittura) e `query_plans` (il filtro di ogni domanda). Indici su `data`, `(paziente_id, data)` e `(professionista_id, data)`, più `(paziente_id, data)` su `eventi_calendario`. Cache in memoria delle risposte per 60 secondi.
 
-### Query Processing
+### Query Processing (Come trasformi la richiesta in risposta)
 
 **Come scomponi la query naturale in operazioni concrete?**
 
@@ -64,7 +64,7 @@ L'analisi AI è già diventata dato strutturato, quindi è una sequenza di lettu
 
 Ordine per punteggio di miglioramento decrescente: in cima chi conviene richiamare per primo. Per ognuno mostro contatti, data dell'appuntamento saltato e le note che lo dimostrano, con le frasi decisive evidenziate. In più un blocco `explain` con l'interpretazione della domanda, i tempi e i pazienti esclusi con il motivo.
 
-### Performance & Scalability
+### Performance & Scalability (Come mantieni il sistema veloce)
 
 **Come rispetti il vincolo <2s con molti utenti concorrenti?**
 
