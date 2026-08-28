@@ -16,6 +16,8 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -33,6 +35,15 @@ public class QueryFacade {
     private final SmartQueryService queryService;
     private final EventoCalendarioRepository eventoRepository;
     private final String configuredReferenceDate;
+
+    /**
+     * Response target the whole request must fit into, a little under the 2 s
+     * required, so the planner budget is what is left after the execution.
+     */
+    private static final int RESPONSE_BUDGET_MS = 1_800;
+
+    /** Execution times of the last requests, to know what the planner can still afford. */
+    private final Deque<Long> recentExecutions = new ConcurrentLinkedDeque<>();
 
     private final Cache<String, QueryResponse> responseCache = Caffeine.newBuilder()
             .maximumSize(1_000)
@@ -61,9 +72,11 @@ public class QueryFacade {
         }
 
         long start = System.nanoTime();
-        PlanOutcome planned = planningService.planWithOrigin(question);
+        PlanOutcome planned = planningService.planWithOrigin(question, plannerBudgetMs());
         QueryPlan plan = planned.plan();
+        long executionStart = System.nanoTime();
         SmartQueryService.Execution execution = queryService.run(plan, referenceDate.value(), professionista);
+        recordExecution((System.nanoTime() - executionStart) / 1_000_000);
         long tookMs = (System.nanoTime() - start) / 1_000_000;
 
         QueryResponse response = new QueryResponse(
@@ -72,6 +85,25 @@ public class QueryFacade {
                 explain(planned, referenceDate, execution, tookMs));
         responseCache.put(cacheKey, response);
         return response;
+    }
+
+    /**
+     * What the planner can wait: the response target minus the slowest execution
+     * seen recently. When the system is idle the execution costs tens of ms and
+     * the planner gets its whole configured budget; under concurrent load the
+     * execution costs hundreds, and the planner gets proportionally less rather
+     * than pushing the answer past the target.
+     */
+    private int plannerBudgetMs() {
+        long slowestExecution = recentExecutions.stream().mapToLong(Long::longValue).max().orElse(0);
+        return (int) Math.max(200, RESPONSE_BUDGET_MS - slowestExecution);
+    }
+
+    private void recordExecution(long ms) {
+        recentExecutions.addLast(ms);
+        while (recentExecutions.size() > 50) {
+            recentExecutions.pollFirst();
+        }
     }
 
     /** Drops every cached answer; returns how many there were. */

@@ -65,8 +65,18 @@ public class QueryPlanningService {
         this.planRepository = planRepository;
     }
 
-    /** Plans the question and reports where the plan came from and how long it took. */
+    /** Plans the question with the configured budget. */
     public PlanOutcome planWithOrigin(String question) {
+        return planWithOrigin(question, aiProperties.planTimeoutMs());
+    }
+
+    /**
+     * @param budgetMs how long this request can wait for the LLM. The caller
+     *                 knows how much of the response target is left once the
+     *                 execution is paid for, and under load that is less than
+     *                 the configured value.
+     */
+    public PlanOutcome planWithOrigin(String question, int budgetMs) {
         long start = System.nanoTime();
         List<PlanClue> clues = heuristicPlanner.explain(question);
         if (!aiProperties.enabled()) {
@@ -79,11 +89,10 @@ public class QueryPlanningService {
         }
         PlanOutcome.Origin origin;
         try {
-            QueryPlan plan = llmPlanAsync(key, question).get(aiProperties.planTimeoutMs(), TimeUnit.MILLISECONDS);
+            QueryPlan plan = llmPlanAsync(key, question).get(Math.max(1, budgetMs), TimeUnit.MILLISECONDS);
             return new PlanOutcome(plan, PlanOutcome.Origin.LLM, elapsedMs(start), clues);
         } catch (TimeoutException e) {
-            log.info("LLM planner over budget ({} ms), answering with rule-based plan",
-                    aiProperties.planTimeoutMs());
+            log.info("LLM planner over budget ({} ms), answering with rule-based plan", budgetMs);
             origin = PlanOutcome.Origin.LLM_TIMEOUT;
         } catch (ExecutionException e) {
             log.warn("LLM planner unavailable, using rule-based plan: {}", e.getCause().getMessage());

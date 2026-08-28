@@ -26,7 +26,9 @@ La domanda opposta ("che **non** hanno saltato l'ultimo appuntamento") è un fil
 
 **Quale architettura permette risposte <2 secondi?**
 
-Quella in cui l'AI non sta nel percorso della ricerca. Legge le note prima, in un job che gira ogni 30 secondi, e salva il risultato. La ricerca fa solo letture MongoDB su indici. L'unica eccezione è una domanda mai vista, che ha un tetto di 1,4 secondi oltre il quale risponde il parser a regole.
+Quella in cui l'AI non sta nel percorso della ricerca. Legge le note prima, in un job che gira ogni 30 secondi, e salva il risultato. La ricerca fa solo letture MongoDB su indici.
+
+L'unica eccezione è una domanda mai vista. Lì l'attesa dell'AI non è un numero fisso: l'obiettivo è 1,8 secondi totali e la richiesta concede all'AI il tempo che resta dopo l'esecuzione, misurata sulle ultime richieste. Scaduto, risponde il parser a regole.
 
 **Come gestire i costi delle API AI?**
 
@@ -76,10 +78,12 @@ Nessuna chiamata esterna nella ricerca, solo letture su indici. Le domande già 
 
 | Scenario | Richieste | mediana | 95° perc. | massimo |
 |---|---|---|---|---|
-| 60 professionisti insieme, domande già note | 300 | 56 ms | 141 ms | 156 ms |
-| 100 professionisti insieme, domande già note | 500 | 95 ms | 245 ms | 367 ms |
-| 60 professionisti insieme, con domande mai viste | 300 | 121 ms | 1387 ms | 1627 ms |
-| 10 domande mai viste nello stesso istante | 10 | 1068 ms | 1264 ms | 1264 ms |
+| 60 professionisti insieme, domande già interpretate | 189 | 170 ms | 338 ms | 407 ms |
+| 100 professionisti insieme, domande già interpretate | 175 | 121 ms | 290 ms | 387 ms |
+| 10 domande mai viste nello stesso istante | 10 | 859 ms | 931 ms | 931 ms |
+| 60 professionisti insieme, tutte domande mai viste | 281 | 208 ms | 1632 ms | 2299 ms |
+
+Le prime tre rispettano il vincolo. L'ultima no: sei richieste su 281 hanno superato i 2 secondi. È lo scenario in cui sessanta persone fanno tutte insieme domande mai viste, con il generatore di carico sulla stessa macchina del server, che ha comunque risposto entro 1889 ms. Nell'uso reale le domande si ripetono e l'interpretazione si paga una volta sola, ma il limite è misurato, non nascosto.
 
 **Come riduci i costi delle API AI mantenendo l'accuratezza?**
 

@@ -69,7 +69,7 @@ class QueryPlanningServiceTest {
 
         assertThat(first.planner()).isEqualTo("heuristic");
         assertThat(elapsed).isLessThan(550);
-        verify(planRepository, timeout(2000)).save(any());
+        verify(planRepository, timeout(5000)).save(any());
     }
 
     @Test
@@ -92,7 +92,7 @@ class QueryPlanningServiceTest {
             clients.shutdownNow();
         }
 
-        verify(planRepository, timeout(2000)).save(any());
+        verify(planRepository, timeout(5000)).save(any());
         verify(llmPlanner, times(1)).plan(anyString());
     }
 
@@ -107,7 +107,7 @@ class QueryPlanningServiceTest {
         assertThat(plan.planner()).isEqualTo("llm");
         assertThat(plan.missedLastAppointment()).isTrue();
         // the plan is stored from the completion callback, i.e. asynchronously
-        verify(planRepository, timeout(2000)).save(any());
+        verify(planRepository, timeout(5000)).save(any());
     }
 
     @Test

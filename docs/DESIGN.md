@@ -122,7 +122,7 @@ Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ri
 - **Dove interviene**: quando legge una nota in indicizzazione, e quando traduce una domanda mai vista in un filtro. Il filtro viene salvato, quindi succede una volta per domanda.
 - **Costo**: proporzionale alle note scritte e alle domande diverse, non alle ricerche. Mille professionisti con venti note al giorno fanno circa ventimila chiamate brevi al giorno.
 - **Quote del fornitore**: le richieste al minuto si contano per modello, quindi l'indicizzazione può usarne uno diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande.
-- **Tempo massimo di attesa**: 1,4 secondi. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo. Quanto spesso succede e quanto pesa è misurato più sotto.
+- **Tempo massimo di attesa, calcolato a ogni richiesta**: l'obiettivo è rispondere entro 1,8 secondi, e quello che l'AI può aspettare è il tempo che resta dopo l'esecuzione. La richiesta guarda quanto è costata l'esecuzione nelle ultime cinquanta richieste e sottrae: a sistema scarico l'esecuzione costa decine di millisecondi e l'AI ha quasi tutto il budget, sotto carico ne costa centinaia e l'AI ne riceve meno, invece di far sforare la risposta. Oltre il tempo concesso risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato. Un budget fisso non basta: con 1,8 secondi fissi e l'esecuzione a 0,4 secondi sotto carico, le risposte uscivano appena sopra i 2 secondi.
 - **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata, e fino a 16 chiamate possono partire insieme, così una raffica non si accoda. Le domande suggerite sono già interpretate all'avvio, insieme a qualche chiamata a vuoto per scaldare il collegamento: la prima dopo un riavvio costa 0,8 secondi in più solo per aprire la connessione.
 - **HTTP/1.1 forzato**: con HTTP/2 il client Java mandava tutte le chiamate su una connessione sola e il fornitore le serviva in fila. Dieci domande insieme tornavano a scaglioni e l'ultima sforava.
 - **Controllo sull'AI**: le aree trovate dal dizionario hanno la precedenza, i filtri espliciti che riconosce vengono aggiunti, e in contrasto "peggioramento" vince su "miglioramento". Su dieci domande di prova il modello piccolo in locale da solo ne prende sei, col controllo dieci. Con Gemini erano dieci già da solo.
@@ -135,18 +135,20 @@ Con `scripts/load-test.py` sulla demo con Gemini attivo, su un server a 4 proces
 
 | Situazione | Richieste | mediana | 95° perc. | la più lenta |
 |---|---|---|---|---|
-| 60 professionisti insieme, domande già viste | 300 | 56 ms | 141 ms | 156 ms |
-| 100 professionisti insieme, domande già viste | 500 | 95 ms | 245 ms | 367 ms |
-| 60 professionisti insieme, con domande mai viste | 300 | 121 ms | 1387 ms | 1627 ms |
-| 10 domande mai viste nello stesso istante | 10 | 1068 ms | 1264 ms | 1264 ms |
+| 60 professionisti insieme, domande già interpretate | 189 | 170 ms | 338 ms | 407 ms |
+| 100 professionisti insieme, domande già interpretate | 175 | 121 ms | 290 ms | 387 ms |
+| 10 domande mai viste nello stesso istante | 10 | 859 ms | 931 ms | 931 ms |
+| 60 professionisti insieme, **tutte** domande mai viste | 281 | 208 ms | 1632 ms | 2299 ms |
 
-Il caso peggiore è la terza riga, con l'AI dentro la richiesta: resta sotto i 2 secondi. Dopo un riavvio le note non vengono rilette (32 prima, 32 dopo, zero chiamate) e i filtri restano, perché stanno nel database.
+Le prime tre righe rispettano il vincolo. **L'ultima no**, e va detto: quando sessanta persone fanno tutte insieme domande che il sistema non ha mai visto, sei richieste su 281 hanno superato i 2 secondi. Il server ha risposto entro 1889 ms, il resto è il generatore di carico che gira sulla stessa macchina e si contende gli stessi 4 processori. È uno scenario innaturale, perché nell'uso reale le domande si ripetono e il costo dell'interpretazione si paga una volta sola, ma è il limite del sistema misurato invece che dichiarato.
+
+Dopo un riavvio le note non vengono rilette (32 prima, 32 dopo, zero chiamate) e i filtri restano, perché stanno nel database.
 
 ## Quando scatta il fallback e quanto cambia la risposta
 
 Se l'AI supera il tempo massimo risponde il parser a regole. Due domande: succede spesso, e quanto sbaglia.
 
-**Quanto spesso.** Sulla demo con Gemini, su 30 domande interpretate: la più veloce 736 ms, mediana 1035 ms, la più lenta 1266 ms, contro un budget di 1400. Poche oltre il budget, e solo quando molte domande nuove arrivano insieme. Con il modello locale su CPU è il contrario: sfora quasi sempre.
+**Quanto spesso.** Sulla demo con Gemini l'AI interpreta una domanda in 0,7-1,3 secondi. Con il sistema scarico rientra sempre nel tempo concesso; quando molte domande mai viste arrivano insieme, il tempo concesso si riduce e qualcuna finisce al parser a regole. Con il modello locale su CPU è il contrario: sfora quasi sempre.
 
 **Quanto cambia.** Ho preso le 28 domande già interpretate dall'AI e ho calcolato cosa avrebbe prodotto il parser a regole sulle stesse domande. Filtro identico in 24 casi su 28. Nei 4 diversi:
 
