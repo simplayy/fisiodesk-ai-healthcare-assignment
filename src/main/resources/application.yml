@@ -54,8 +54,10 @@ smartquery:
     # false = deterministic analyzer only, no LLM calls at all
     enabled: ${AI_ENABLED:false}
     # Max wait for the LLM planner in a request; past it the rule-based plan
-    # answers and the LLM plan is stored for next time.
-    plan-timeout-ms: ${AI_PLAN_TIMEOUT_MS:1500}
+    # answers and the LLM plan is stored for next time. Size it on the response
+    # target minus the execution under concurrency (measured up to ~0.4 s), not
+    # minus the execution when the system is idle.
+    plan-timeout-ms: ${AI_PLAN_TIMEOUT_MS:1200}
     # Optional separate model for note analysis (separate provider quota). Empty = same model.
     analysis-model: ${AI_ANALYSIS_MODEL:}
   warmup:

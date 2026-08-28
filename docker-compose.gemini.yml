@@ -18,5 +18,7 @@ services:
       AI_ANALYSIS_MODEL: ${AI_ANALYSIS_MODEL:-gemini-3.1-flash-lite}
       AI_INDEXER_RPM: ${AI_INDEXER_RPM:-12}
       AI_TIMEOUT_MS: "20000"
-      # Flash-Lite plans a question in 0.4-1.3 s; execution takes tens of ms.
-      AI_PLAN_TIMEOUT_MS: ${AI_PLAN_TIMEOUT_MS:-1800}
+      # 2 s budget minus the execution. Under concurrency the execution is not
+      # "tens of ms" but up to ~0.4 s, so the planner gets 1.4 s: with 1.8 s a
+      # burst of unseen questions produced answers just over 2 s.
+      AI_PLAN_TIMEOUT_MS: ${AI_PLAN_TIMEOUT_MS:-1200}

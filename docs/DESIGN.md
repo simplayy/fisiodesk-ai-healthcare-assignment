@@ -122,7 +122,7 @@ Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ri
 - **Dove interviene**: quando legge una nota in indicizzazione, e quando traduce una domanda mai vista in un filtro. Il filtro viene salvato, quindi succede una volta per domanda.
 - **Costo**: proporzionale alle note scritte e alle domande diverse, non alle ricerche. Mille professionisti con venti note al giorno fanno circa ventimila chiamate brevi al giorno.
 - **Quote del fornitore**: le richieste al minuto si contano per modello, quindi l'indicizzazione può usarne uno diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande.
-- **Tempo massimo di attesa**: 1,5 secondi, 1,8 con Gemini. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo. Quanto spesso succede e quanto pesa è misurato più sotto.
+- **Tempo massimo di attesa**: 1,4 secondi. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo. Quanto spesso succede e quanto pesa è misurato più sotto.
 - **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata, e fino a 16 chiamate possono partire insieme, così una raffica non si accoda. Le domande suggerite sono già interpretate all'avvio, insieme a qualche chiamata a vuoto per scaldare il collegamento: la prima dopo un riavvio costa 0,8 secondi in più solo per aprire la connessione.
 - **HTTP/1.1 forzato**: con HTTP/2 il client Java mandava tutte le chiamate su una connessione sola e il fornitore le serviva in fila. Dieci domande insieme tornavano a scaglioni e l'ultima sforava.
 - **Controllo sull'AI**: le aree trovate dal dizionario hanno la precedenza, i filtri espliciti che riconosce vengono aggiunti, e in contrasto "peggioramento" vince su "miglioramento". Su dieci domande di prova il modello piccolo in locale da solo ne prende sei, col controllo dieci. Con Gemini erano dieci già da solo.
@@ -146,7 +146,7 @@ Il caso peggiore è la terza riga, con l'AI dentro la richiesta: resta sotto i 2
 
 Se l'AI supera il tempo massimo risponde il parser a regole. Due domande: succede spesso, e quanto sbaglia.
 
-**Quanto spesso.** Sulla demo con Gemini, su 30 domande interpretate: la più veloce 736 ms, mediana 1035 ms, la più lenta 1266 ms, contro un budget di 1800. Nessuna oltre il budget, quindi zero fallback. Con il modello locale su CPU è il contrario: sfora quasi sempre.
+**Quanto spesso.** Sulla demo con Gemini, su 30 domande interpretate: la più veloce 736 ms, mediana 1035 ms, la più lenta 1266 ms, contro un budget di 1400. Poche oltre il budget, e solo quando molte domande nuove arrivano insieme. Con il modello locale su CPU è il contrario: sfora quasi sempre.
 
 **Quanto cambia.** Ho preso le 28 domande già interpretate dall'AI e ho calcolato cosa avrebbe prodotto il parser a regole sulle stesse domande. Filtro identico in 24 casi su 28. Nei 4 diversi:
 
@@ -162,7 +162,7 @@ Le differenze rimaste danno tutte una risposta **più larga** del dovuto: il par
 
 - **Modello piccolo in locale più dizionario, invece di un modello grande.** Gira ovunque e tiene i testi clinici in casa, ma sbaglia circa una domanda su tre sui termini espliciti; il dizionario recupera quei casi. Con un modello grande il dizionario non serve, ma non fa danno.
 - **Unisco i dati nel codice invece che nel database.** MongoDB saprebbe unire le tabelle in una query sola (`$lookup`), ma tre ricerche separate e indicizzate sono più leggibili e più facili da testare. Costa qualche viaggio in più, irrilevante a questi volumi; con volumi veri si passerebbe alla query unica.
-- **Gemini per la demo online.** Modelli separati per domande e note, freno sulle chiamate, tempo massimo 1,8 secondi. Con il piano gratuito si coprono 15 domande nuove al minuto: oltre serve il piano a pagamento, non codice diverso.
+- **Gemini per la demo online.** Modelli separati per domande e note, freno sulle chiamate, tempo massimo 1,4 secondi. Con il piano gratuito si coprono 15 domande nuove al minuto: oltre serve il piano a pagamento, non codice diverso.
 
 ## Cosa non fa
 
@@ -195,7 +195,7 @@ Le differenze rimaste danno tutte una risposta **più larga** del dovuto: il par
 | `AI_INDEXER_RPM` | `0` (nessun ritmo) | massimo di chiamate LLM al minuto dell'indexer, da tenere sotto la quota del provider |
 | `GEMINI_API_KEY` | – | chiave Gemini, letta da `.env` dall'overlay `docker-compose.gemini.yml` |
 | `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
-| `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` negli overlay AI) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
+| `AI_PLAN_TIMEOUT_MS` | `1400` | quanto una richiesta aspetta l'AI prima di rispondere col parser a regole: obiettivo di 2 s meno l'esecuzione sotto carico |
 
 ## Se qualcosa non va
 

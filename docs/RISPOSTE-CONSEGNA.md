@@ -26,7 +26,7 @@ La domanda opposta ("che **non** hanno saltato l'ultimo appuntamento") è un fil
 
 **Quale architettura permette risposte <2 secondi?**
 
-Quella in cui l'AI non sta nel percorso della ricerca. Legge le note prima, in un job che gira ogni 30 secondi, e salva il risultato. La ricerca fa solo letture MongoDB su indici. L'unica eccezione è una domanda mai vista, che ha un tetto di 1,5 secondi oltre il quale risponde il parser a regole.
+Quella in cui l'AI non sta nel percorso della ricerca. Legge le note prima, in un job che gira ogni 30 secondi, e salva il risultato. La ricerca fa solo letture MongoDB su indici. L'unica eccezione è una domanda mai vista, che ha un tetto di 1,4 secondi oltre il quale risponde il parser a regole.
 
 **Come gestire i costi delle API AI?**
 

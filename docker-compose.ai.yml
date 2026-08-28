@@ -14,9 +14,9 @@ services:
       AI_BASE_URL: http://ollama:11434
       AI_MODEL: ${AI_MODEL:-qwen2.5:1.5b}
       AI_TIMEOUT_MS: "90000"
-      # A 1.5B model on CPU needs seconds: past the budget the rule parser
-      # answers and the LLM plan is stored for next time.
-      AI_PLAN_TIMEOUT_MS: ${AI_PLAN_TIMEOUT_MS:-1800}
+      # A 1.5B model on CPU needs seconds, so this budget is almost always spent
+      # in full: keep it under the 2 s target minus the execution under load.
+      AI_PLAN_TIMEOUT_MS: ${AI_PLAN_TIMEOUT_MS:-1200}
     depends_on:
       ollama-pull:
         condition: service_completed_successfully
