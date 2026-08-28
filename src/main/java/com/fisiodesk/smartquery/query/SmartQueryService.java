@@ -12,8 +12,11 @@ import com.fisiodesk.smartquery.repository.NoteInsightRepository;
 import com.fisiodesk.smartquery.repository.PazienteRepository;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
@@ -42,6 +45,21 @@ public class SmartQueryService {
         this.pazienteRepository = pazienteRepository;
     }
 
+    /** Why a patient with notes in the window is not in the answer. */
+    public record Exclusion(String pazienteId, String nome, String cognome, String reason) {
+    }
+
+    /** What the execution did, for the explanation shown with the answer. */
+    public record Trace(long insightsMs, int notesInWindow, int notesMatchingArea,
+                        int patientsInWindow, int patientsEvaluated, long evaluationMs,
+                        List<Exclusion> excluded) {
+    }
+
+    public record Execution(List<PatientResult> results, Trace trace) {
+    }
+
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.of("UTC"));
+
     public List<PatientResult> execute(QueryPlan plan, Instant referenceDate) {
         return execute(plan, referenceDate, null);
     }
@@ -52,29 +70,70 @@ public class SmartQueryService {
      *                         patients. Null means no scoping (admin / demo).
      */
     public List<PatientResult> execute(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
+        return run(plan, referenceDate, professionistaId).results();
+    }
+
+    /** Executes the plan and reports every step and every exclusion. */
+    public Execution run(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
         Instant from = referenceDate.atZone(ZoneOffset.UTC)
                 .minusMonths(plan.windowMonths())
                 .toInstant();
 
+        long t0 = System.nanoTime();
         List<NoteInsight> inWindow = professionistaId == null
                 ? insightRepository.findByDataBetween(from, referenceDate)
                 : insightRepository.findByProfessionistaIdAndDataBetween(professionistaId, from, referenceDate);
+        Map<ObjectId, List<NoteInsight>> allByPatient = inWindow.stream()
+                .collect(Collectors.groupingBy(NoteInsight::getPazienteId));
         Map<ObjectId, List<NoteInsight>> byPatient = inWindow.stream()
                 .filter(insight -> matchesArea(insight, plan))
                 .collect(Collectors.groupingBy(NoteInsight::getPazienteId));
 
         Map<String, Paziente> patients = pazienteRepository
-                .findAllById(byPatient.keySet().stream().map(ObjectId::toHexString).toList())
+                .findAllById(allByPatient.keySet().stream().map(ObjectId::toHexString).toList())
                 .stream()
                 .collect(Collectors.toMap(Paziente::getId, Function.identity()));
+        long insightsMs = (System.nanoTime() - t0) / 1_000_000;
 
-        return byPatient.entrySet().stream()
-                .map(entry -> evaluate(entry.getKey(), entry.getValue(), plan,
-                        referenceDate, patients))
-                .flatMap(Optional::stream)
-                .sorted(Comparator.comparingInt(PatientResult::improvementScore).reversed()
-                        .thenComparing(PatientResult::cognome))
-                .toList();
+        long t1 = System.nanoTime();
+        List<Exclusion> excluded = new ArrayList<>();
+        List<PatientResult> results = new ArrayList<>();
+        for (Map.Entry<ObjectId, List<NoteInsight>> entry : byPatient.entrySet()) {
+            Outcome outcome = evaluate(entry.getKey(), entry.getValue(), plan, referenceDate, patients);
+            if (outcome.result() != null) {
+                results.add(outcome.result());
+            } else {
+                excluded.add(exclusion(entry.getKey(), patients, outcome.reason()));
+            }
+        }
+        for (ObjectId id : allByPatient.keySet()) {
+            if (!byPatient.containsKey(id)) {
+                excluded.add(exclusion(id, patients, "nessuna nota sull'area richiesta nella finestra"));
+            }
+        }
+        long evaluationMs = (System.nanoTime() - t1) / 1_000_000;
+
+        results.sort(Comparator.comparingInt(PatientResult::improvementScore).reversed()
+                .thenComparing(PatientResult::cognome));
+        excluded.sort(Comparator.comparing(Exclusion::cognome, Comparator.nullsLast(Comparator.naturalOrder())));
+        int matching = byPatient.values().stream().mapToInt(List::size).sum();
+        return new Execution(List.copyOf(results), new Trace(insightsMs, inWindow.size(), matching,
+                allByPatient.size(), byPatient.size(), evaluationMs, List.copyOf(excluded)));
+    }
+
+    private static Exclusion exclusion(ObjectId id, Map<String, Paziente> patients, String reason) {
+        Paziente p = patients.get(id.toHexString());
+        return new Exclusion(id.toHexString(), p == null ? null : p.getNome(), p == null ? null : p.getCognome(), reason);
+    }
+
+    private record Outcome(PatientResult result, String reason) {
+        static Outcome kept(PatientResult r) {
+            return new Outcome(r, null);
+        }
+
+        static Outcome dropped(String reason) {
+            return new Outcome(null, reason);
+        }
     }
 
     private boolean matchesArea(NoteInsight insight, QueryPlan plan) {
@@ -85,11 +144,11 @@ public class SmartQueryService {
                 .anyMatch(area -> insight.getBodyAreas().contains(area.name()));
     }
 
-    private Optional<PatientResult> evaluate(ObjectId pazienteId,
-                                             List<NoteInsight> insights,
-                                             QueryPlan plan,
-                                             Instant referenceDate,
-                                             Map<String, Paziente> patients) {
+    private Outcome evaluate(ObjectId pazienteId,
+                             List<NoteInsight> insights,
+                             QueryPlan plan,
+                             Instant referenceDate,
+                             Map<String, Paziente> patients) {
         // Clinical trend over the window, computed only on the notes that match
         // the requested body area: a patient improving on a different problem
         // (e.g. cervicalgia) must not pass a lumbar-improvement filter.
@@ -98,10 +157,12 @@ public class SmartQueryService {
                 .anyMatch(insight -> insight.getImprovementScore() > 0);
 
         if (plan.requireImprovement() && !(totalScore > 0 && hasPositiveNote)) {
-            return Optional.empty();
+            return Outcome.dropped("nessun miglioramento nell'area richiesta (punteggio " + signed(totalScore)
+                    + " su " + insights.size() + " note)");
         }
         if (plan.requireWorsening() && totalScore >= 0) {
-            return Optional.empty();
+            return Outcome.dropped("in miglioramento o senza segnali negativi (punteggio " + signed(totalScore)
+                    + " su " + insights.size() + " note)");
         }
 
         Optional<EventoCalendario> lastEvent = eventoRepository
@@ -110,12 +171,14 @@ public class SmartQueryService {
                 .map(event -> EventoCalendario.STATO_NO_SHOW.equals(event.getStato()))
                 .orElse(false);
         if (plan.missedLastAppointment() && !missedLast) {
-            return Optional.empty();
+            return Outcome.dropped(lastEvent
+                    .map(event -> "ultimo appuntamento " + event.getStato() + " il " + DAY.format(event.getData()) + ", non saltato")
+                    .orElse("nessun appuntamento in calendario"));
         }
 
         Paziente paziente = patients.get(pazienteId.toHexString());
         if (paziente == null) {
-            return Optional.empty();
+            return Outcome.dropped("anagrafica non trovata");
         }
 
         List<EvidenceView> evidence = insights.stream()
@@ -133,7 +196,7 @@ public class SmartQueryService {
                 .map(event -> new AppointmentView(event.getData(), event.getStato(), event.getNote()))
                 .orElse(null);
 
-        return Optional.of(new PatientResult(
+        return Outcome.kept(new PatientResult(
                 paziente.getId(),
                 paziente.getNome(),
                 paziente.getCognome(),
@@ -144,5 +207,9 @@ public class SmartQueryService {
                 totalScore,
                 appointment,
                 evidence));
+    }
+
+    private static String signed(int score) {
+        return score > 0 ? "+" + score : String.valueOf(score);
     }
 }

@@ -116,3 +116,49 @@ button#run:disabled { opacity: .6; cursor: wait; }
   .search-row { flex-direction: column; }
   button#run { padding: 12px; }
 }
+
+/* --- explanation panel --- */
+.chip-action { margin-left: auto; }
+.explain {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 14px 20px 16px; margin-top: 16px;
+}
+.explain-head { display: flex; justify-content: space-between; align-items: baseline; }
+.pipeline {
+  list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 8px 0 14px;
+}
+.stage {
+  position: relative; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+  background: #f8fafc; min-width: 0;
+}
+.stage.total { background: #eef4f4; border-color: #cfe0df; }
+.stage-name { font-size: 12px; font-weight: 600; color: var(--muted); }
+.stage-ms { font-size: 20px; font-weight: 700; color: var(--accent-dark); margin: 2px 0; }
+.stage-ms small { font-size: 12px; font-weight: 500; color: var(--muted); }
+.stage-detail { font-size: 12.5px; line-height: 1.35; }
+.stage.origin-LLM .stage-detail { color: var(--good); }
+.stage.origin-LLM_TIMEOUT .stage-detail, .stage.origin-LLM_ERROR .stage-detail { color: var(--warn); }
+.explain-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.explain-sub { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.clues { display: flex; flex-wrap: wrap; gap: 6px; }
+.clue { font-size: 12.5px; background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 3px 9px; }
+.clue b { color: var(--accent-dark); font-weight: 600; }
+.clue.neg b { color: var(--bad); }
+.context { list-style: none; font-size: 12.5px; }
+.context li { padding: 2px 0; }
+.excluded { margin-top: 12px; font-size: 13px; }
+.excluded summary { cursor: pointer; color: var(--muted); font-weight: 600; font-size: 12.5px; }
+.excluded ul { list-style: none; margin-top: 6px; }
+.excluded li { padding: 4px 0; border-top: 1px dashed var(--border); }
+.excluded li b { font-weight: 600; }
+.excluded li span { color: var(--muted); }
+mark { background: #fff3b0; color: inherit; padding: 0 1px; border-radius: 2px; }
+.toast {
+  position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+  background: #10322f; color: #fff; padding: 10px 16px; border-radius: 10px; font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0,0,0,.2); max-width: 90vw;
+}
+@media (max-width: 640px) {
+  .pipeline { grid-template-columns: 1fr 1fr; }
+  .explain-grid { grid-template-columns: 1fr; }
+}

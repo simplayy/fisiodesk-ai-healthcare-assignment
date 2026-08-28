@@ -55,6 +55,10 @@ Il punteggio è la somma dei match (clamp a ±3) e ogni match finisce nel campo 
 
 Ogni nota e ogni annotazione portano `professionista_id`; la query accetta uno scope opzionale e legge solo le annotazioni di quel professionista (indice `{professionista_id, data}`), quindi un professionista non vede mai i pazienti dei colleghi. Lo scope è un parametro esplicito solo per la demo: nel gestionale arriva dal token dell'utente autenticato e il servizio non lo accetta dal client. Senza scope la vista è amministrativa.
 
+## Spiegabilità
+
+Un risultato clinico non deve essere opaco. La risposta porta con sé il tracciato reale dell'esecuzione (`explain`): origine del piano e tempo di attesa, termini del lessico che hanno determinato ogni campo, tappe con durata e conteggi, pazienti esclusi con il motivo calcolato dallo stesso codice che li ha esclusi. È volutamente un tracciato e non un riassunto generato dal modello: costerebbe una chiamata a ogni query, romperebbe il vincolo di latenza e sarebbe meno affidabile dei dati.
+
 ## Integrazione LLM
 
 - **Libreria**: Spring AI 1.1 (starter OpenAI). Il client parla il protocollo chat-completions, quindi lo stesso codice funziona con OpenAI, Gemini (endpoint `/v1beta/openai`), OpenRouter, Azure o un Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura). Retry, timeout e serializzazione sono della libreria, non fatti in casa.

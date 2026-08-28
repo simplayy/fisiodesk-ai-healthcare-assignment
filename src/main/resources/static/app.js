@@ -9,6 +9,25 @@
   var statusEl = document.getElementById("status");
   var footerEl = document.getElementById("footer");
   var professionistaEl = document.getElementById("professionista");
+  var explainBox = document.getElementById("explain-box");
+  var pipelineEl = document.getElementById("pipeline");
+  var cluesEl = document.getElementById("clues");
+  var contextEl = document.getElementById("context");
+  var excludedBox = document.getElementById("excluded-box");
+  var excludedEl = document.getElementById("excluded");
+  var excludedSummary = document.getElementById("excluded-summary");
+  var explainTotal = document.getElementById("explain-total");
+  var clearCacheBtn = document.getElementById("clear-cache");
+  var toastEl = document.getElementById("toast");
+  var toastTimer = null;
+
+  var FIELD_LABELS = {
+    bodyAreas: "area",
+    requireImprovement: "con miglioramento",
+    requireWorsening: "senza miglioramento / peggiorati",
+    missedLastAppointment: "ultimo appuntamento saltato",
+    windowMonths: "finestra (mesi)"
+  };
 
   var AREA_LABELS = {
     LUMBAR: "zona lombare",
@@ -57,6 +76,97 @@
     if (score > 0) return el("span", "badge trend", "In miglioramento (+" + score + ")");
     if (score < 0) return el("span", "badge trend neg", "Non in miglioramento (" + score + ")");
     return el("span", "badge trend neg", "Andamento non chiaro");
+  }
+
+  function toast(message) {
+    toastEl.textContent = message;
+    toastEl.classList.remove("hidden");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toastEl.classList.add("hidden"); }, 4000);
+  }
+
+  /* Accent-tolerant highlight of the lexicon terms inside a note excerpt. */
+  function accentClass(ch) {
+    var map = { a: "aàá", e: "eèé", i: "iìí", o: "oòó", u: "uùú" };
+    return map[ch] ? "[" + map[ch] + "]" : ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+  function highlighted(text, terms) {
+    var node = document.createElement("div");
+    if (!terms || !terms.length) { node.textContent = text; return node; }
+    var pattern = terms.filter(Boolean).map(function (t) {
+      return t.toLowerCase().split("").map(accentClass).join("");
+    }).join("|");
+    var re = new RegExp("(" + pattern + ")", "gi");
+    var last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      node.appendChild(document.createTextNode(text.slice(last, m.index)));
+      var mark = document.createElement("mark");
+      mark.textContent = m[0];
+      node.appendChild(mark);
+      last = m.index + m[0].length;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    node.appendChild(document.createTextNode(text.slice(last)));
+    return node;
+  }
+
+  function renderExplain(data) {
+    var ex = data.explain;
+    if (!ex) { explainBox.classList.add("hidden"); return; }
+
+    explainTotal.textContent = data.meta.cached
+      ? "risposta servita dalla cache (calcolata in " + data.meta.tookMs + " ms)"
+      : "calcolata ora in " + data.meta.tookMs + " ms";
+
+    pipelineEl.innerHTML = "";
+    ex.stages.forEach(function (st, i) {
+      var isTotal = i === ex.stages.length - 1;
+      var li = el("li", "stage" + (isTotal ? " total" : "") + (i === 0 ? " origin-" + ex.planOrigin : ""));
+      li.appendChild(el("div", "stage-name", (isTotal ? "" : (i + 1) + ". ") + st.name));
+      var ms = el("div", "stage-ms", String(st.ms));
+      ms.appendChild(el("small", null, " ms"));
+      li.appendChild(ms);
+      li.appendChild(el("div", "stage-detail", st.detail));
+      pipelineEl.appendChild(li);
+    });
+
+    cluesEl.innerHTML = "";
+    if (!ex.clues.length) {
+      cluesEl.appendChild(el("span", "results-meta", "nessun termine esplicito: l'interpretazione è interamente dell'AI"));
+    }
+    ex.clues.forEach(function (c) {
+      var chip = el("span", "clue" + (c.field === "requireWorsening" ? " neg" : ""));
+      chip.appendChild(document.createTextNode("\u201C" + c.term + "\u201D \u2192 "));
+      var value = c.field === "bodyAreas" ? (AREA_LABELS[c.value] || c.value)
+        : c.field === "windowMonths" ? "ultimi " + c.value + " mesi"
+        : FIELD_LABELS[c.field] || c.field;
+      chip.appendChild(el("b", null, value));
+      cluesEl.appendChild(chip);
+    });
+
+    contextEl.innerHTML = "";
+    contextEl.appendChild(el("li", null, "\u201COggi\u201D = " + fmtDate(data.meta.referenceDate) + " (" + ex.referenceDateSource + ")"));
+    contextEl.appendChild(el("li", null, "Ambito: " + (professionistaEl.value
+      ? "solo i pazienti del professionista \u2026" + professionistaEl.value.slice(-4) : "tutti i professionisti")));
+    contextEl.appendChild(el("li", null, "Note lette: " + ex.notesInWindow + " nella finestra, " + ex.notesMatchingArea +
+      " sull'area richiesta, " + ex.patientsInWindow + " pazienti coinvolti"));
+    contextEl.appendChild(el("li", null, "Piano: " + ex.planOriginLabel));
+
+    excludedEl.innerHTML = "";
+    if (ex.excluded.length) {
+      excludedSummary.textContent = ex.excluded.length + (ex.excluded.length === 1
+        ? " paziente con note nel periodo escluso: perché" : " pazienti con note nel periodo esclusi: perché");
+      ex.excluded.forEach(function (x) {
+        var li = el("li");
+        li.appendChild(el("b", null, (x.nome || "") + " " + (x.cognome || x.pazienteId)));
+        li.appendChild(el("span", null, " \u2014 " + x.reason));
+        excludedEl.appendChild(li);
+      });
+      excludedBox.classList.remove("hidden");
+    } else {
+      excludedBox.classList.add("hidden");
+    }
+    explainBox.classList.remove("hidden");
   }
 
   function renderResults(data) {
@@ -109,8 +219,10 @@
             : ev.improvementScore < 0 ? "evidence-item neg" : "evidence-item";
           var item = el("div", cls);
           var src = ev.source === "schede_valutazione" ? "Scheda di valutazione" : "Diario trattamenti";
-          item.appendChild(el("div", "evidence-date", src + " · " + fmtDate(ev.data)));
-          item.appendChild(el("div", null, ev.excerpt));
+          item.appendChild(el("div", "evidence-date", src + " · " + fmtDate(ev.data) +
+            (ev.improvementScore ? " · punteggio " + (ev.improvementScore > 0 ? "+" : "") + ev.improvementScore : "") +
+            (ev.analyzer === "llm" ? " · analisi AI" : " · analisi lessicale")));
+          item.appendChild(highlighted(ev.excerpt, ev.matchedTerms));
           evBox.appendChild(item);
         });
         card.appendChild(evBox);
@@ -122,6 +234,7 @@
   function showError(message) {
     resultsEl.innerHTML = "";
     planBox.classList.add("hidden");
+    explainBox.classList.add("hidden");
     resultsEl.appendChild(el("div", "error-box", message));
   }
 
@@ -144,6 +257,7 @@
       })
       .then(function (data) {
         renderPlan(data.plan);
+        renderExplain(data);
         renderResults(data);
       })
       .catch(function (err) {
@@ -156,7 +270,7 @@
   }
 
   function loadProfessionisti() {
-    fetch("/api/professionisti")
+    return fetch("/api/professionisti")
       .then(function (res) { return res.json(); })
       .then(function (list) {
         list.forEach(function (p) {
@@ -198,11 +312,33 @@
     });
   });
 
+  clearCacheBtn.addEventListener("click", function () {
+    clearCacheBtn.disabled = true;
+    fetch("/api/cache", { method: "DELETE" })
+      .then(function (res) { return res.json(); })
+      .then(function (r) {
+        toast("Cache svuotata: " + r.responses + " risposte e " + r.plans + " piani. La prossima domanda passa di nuovo dall'AI.");
+        if (questionEl.value.trim() && !explainBox.classList.contains("hidden")) runQuery();
+      })
+      .catch(function () { toast("Impossibile svuotare la cache"); })
+      .finally(function () { clearCacheBtn.disabled = false; });
+  });
+
   professionistaEl.addEventListener("change", function () {
     if (questionEl.value.trim()) runQuery();
   });
 
-  loadProfessionisti();
+  /* Deep link: /?q=<domanda>&professionista=<id> opens the page on that question. */
+  function runFromUrl() {
+    var params = new URLSearchParams(window.location.search);
+    var q = params.get("q");
+    if (!q) return;
+    questionEl.value = q;
+    if (params.get("professionista")) professionistaEl.value = params.get("professionista");
+    runQuery();
+  }
+
+  loadProfessionisti().then(runFromUrl);
   loadStats();
   setInterval(loadStats, 15000);
 })();

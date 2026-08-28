@@ -49,15 +49,45 @@ public final class QueryDtos {
     public record Meta(long tookMs, boolean cached, Instant referenceDate) {
     }
 
+    /** One word of the question and how it was read ("dolore lombare" -> LUMBAR). */
+    public record ClueView(String field, String term, String value) {
+    }
+
+    /** One step of the pipeline with its duration and a human-readable detail. */
+    public record StageView(String name, long ms, String detail) {
+    }
+
+    public record ExclusionView(String pazienteId, String nome, String cognome, String reason) {
+    }
+
+    /**
+     * How the answer was produced: where the plan came from, which words of
+     * the question the lexicon recognised, each step with its timing and
+     * counts, and every patient with notes in the window who was left out
+     * and why. Built from what the pipeline actually did, no extra AI call.
+     */
+    public record ExplainView(
+            String planOrigin,
+            String planOriginLabel,
+            List<ClueView> clues,
+            String referenceDateSource,
+            List<StageView> stages,
+            int notesInWindow,
+            int notesMatchingArea,
+            int patientsInWindow,
+            List<ExclusionView> excluded) {
+    }
+
     public record QueryResponse(
             String question,
             PlanView plan,
             List<PatientResult> results,
-            Meta meta) {
+            Meta meta,
+            ExplainView explain) {
 
         public QueryResponse asCached() {
             return new QueryResponse(question, plan, results,
-                    new Meta(meta.tookMs(), true, meta.referenceDate()));
+                    new Meta(meta.tookMs(), true, meta.referenceDate()), explain);
         }
     }
 }

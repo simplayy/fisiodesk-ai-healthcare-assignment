@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -62,25 +63,44 @@ public class QueryPlanningService {
     }
 
     public QueryPlan plan(String question) {
+        return planWithOrigin(question).plan();
+    }
+
+    /** Plans the question and reports where the plan came from and how long it took. */
+    public PlanOutcome planWithOrigin(String question) {
+        long start = System.nanoTime();
+        List<PlanClue> clues = heuristicPlanner.explain(question);
         if (!aiProperties.enabled()) {
-            return heuristicPlanner.plan(question);
+            return new PlanOutcome(heuristicPlanner.plan(question), PlanOutcome.Origin.AI_DISABLED, elapsedMs(start), clues);
         }
         String key = key(question);
         Optional<QueryPlan> known = findStored(key);
         if (known.isPresent()) {
-            return known.get();
+            return new PlanOutcome(known.get(), PlanOutcome.Origin.STORED, elapsedMs(start), clues);
         }
+        PlanOutcome.Origin origin;
         try {
-            return llmPlanAsync(key, question).get(aiProperties.planTimeoutMs(), TimeUnit.MILLISECONDS);
+            QueryPlan plan = llmPlanAsync(key, question).get(aiProperties.planTimeoutMs(), TimeUnit.MILLISECONDS);
+            return new PlanOutcome(plan, PlanOutcome.Origin.LLM, elapsedMs(start), clues);
         } catch (TimeoutException e) {
             log.info("LLM planner over budget ({} ms), answering with rule-based plan",
                     aiProperties.planTimeoutMs());
+            origin = PlanOutcome.Origin.LLM_TIMEOUT;
         } catch (ExecutionException e) {
             log.warn("LLM planner unavailable, using rule-based plan: {}", e.getCause().getMessage());
+            origin = PlanOutcome.Origin.LLM_ERROR;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            origin = PlanOutcome.Origin.LLM_ERROR;
         }
-        return heuristicPlanner.plan(question);
+        return new PlanOutcome(heuristicPlanner.plan(question), origin, elapsedMs(start), clues);
+    }
+
+    /** Forgets every stored plan: the next occurrence of each question is planned again. */
+    public long clearStoredPlans() {
+        long count = planRepository.count();
+        planRepository.deleteAll();
+        return count;
     }
 
     /**

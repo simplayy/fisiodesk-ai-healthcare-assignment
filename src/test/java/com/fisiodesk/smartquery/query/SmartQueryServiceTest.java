@@ -130,6 +130,24 @@ class SmartQueryServiceTest {
     }
 
     @Test
+    void traceExplainsEveryExclusion() {
+        QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, true, "test");
+
+        SmartQueryService.Execution execution = service.run(plan, REFERENCE, null);
+
+        assertThat(execution.results()).extracting(PatientResult::cognome).containsExactly("Rossi");
+        assertThat(execution.trace().notesInWindow()).isEqualTo(6);
+        assertThat(execution.trace().notesMatchingArea()).isEqualTo(5);
+        assertThat(execution.trace().patientsInWindow()).isEqualTo(4);
+        assertThat(execution.trace().excluded())
+                .extracting(SmartQueryService.Exclusion::cognome, SmartQueryService.Exclusion::reason)
+                .containsExactlyInAnyOrder(
+                        org.assertj.core.groups.Tuple.tuple("Ferrari", "nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)"),
+                        org.assertj.core.groups.Tuple.tuple("Verdi", "nessuna nota sull'area richiesta nella finestra"),
+                        org.assertj.core.groups.Tuple.tuple("Neri", "ultimo appuntamento completato il 20/12/2024, non saltato"));
+    }
+
+    @Test
     void professionalScopeOnlyReadsThatProfessionalsNotes() {
         ObjectId professionista = new ObjectId();
         when(insightRepository.findByProfessionistaIdAndDataBetween(eq(professionista), any(), any()))

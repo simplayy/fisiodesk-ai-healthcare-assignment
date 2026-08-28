@@ -50,6 +50,28 @@ class HeuristicQueryPlannerTest {
     }
 
     @Test
+    void explainsWhichWordsDroveEachField() {
+        var clues = planner.explain(
+                "Mostra pazienti con dolore lombare che hanno mostrato miglioramento "
+                + "negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento");
+
+        assertThat(clues).extracting(PlanClue::field, PlanClue::term, PlanClue::value).containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("bodyAreas", "lombare", "LUMBAR"),
+                org.assertj.core.groups.Tuple.tuple("requireImprovement", "miglioramento", "true"),
+                org.assertj.core.groups.Tuple.tuple("missedLastAppointment", "saltato", "true"),
+                org.assertj.core.groups.Tuple.tuple("windowMonths", "ultimi 3 mesi", "3"));
+    }
+
+    @Test
+    void negationIsReportedAsTheWorseningClue() {
+        var clues = planner.explain("Pazienti con lombalgia che non mostrano miglioramento");
+
+        assertThat(clues).extracting(PlanClue::field).contains("requireWorsening").doesNotContain("requireImprovement");
+        assertThat(clues).filteredOn(c -> c.field().equals("requireWorsening"))
+                .extracting(PlanClue::term).containsExactly("non mostrano miglioramento");
+    }
+
+    @Test
     void defaultsWhenNothingIsSpecified() {
         QueryPlan plan = planner.plan("Chi ha saltato l'ultimo appuntamento?");
 

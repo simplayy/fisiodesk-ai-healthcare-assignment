@@ -43,6 +43,11 @@ excluded = {"Ferrari", "Verdi", "Ricci"}
 if excluded & set(found):
     print(f"FAIL: negative cases leaked: {excluded & set(found)}")
     sys.exit(1)
+explain = data.get("explain") or {}
+if not explain.get("stages") or "excluded" not in explain:
+    print("FAIL: explain block missing")
+    sys.exit(1)
+print(f"Explain: plan {explain['planOrigin']}, {len(explain['stages'])} stages, {len(explain['excluded'])} excluded with reasons")
 print("OK: target query returns exactly the expected patients")
 PY
 )"
