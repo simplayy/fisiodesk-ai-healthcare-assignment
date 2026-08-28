@@ -101,4 +101,4 @@ L'indexer confronta l'hash del testo: nota nuova o modificata la rianalizza, inv
 2. **GitHub repository**: questo, con il codice, `docker-compose.yml` e il README. Setup con un comando, senza chiavi API.
 3. **Nel README**: [come far partire il sistema](../README.md#2-come-far-partire-il-sistema), [tre trade-off](../README.md#6-le-scelte-principali-trade-off), [demo della query target](../README.md#3-provalo-la-query-target) con screenshot e comando.
 
-Il linguaggio è Java 17 con Spring Boot, come chiedeva la nota sulla libera scelta: è lo stack di FisioDesk e Dottai, quindi questi componenti si aggiungono al backend esistente. Quello che manca perché è un MVP è elencato nei [limiti noti](DESIGN.md#limiti-noti).
+Il linguaggio è Java 17 con Spring Boot, come chiedeva la nota sulla libera scelta: è lo stack di FisioDesk e Dottai, quindi questi componenti si aggiungono al backend esistente. Quello che manca perché è un MVP è elencato nei [limiti noti](DESIGN.md#cosa-non-fa).
