@@ -4,6 +4,26 @@ spring:
   data:
     mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/fisiodesk}
+  ai:
+    openai:
+      # Any OpenAI-compatible endpoint: OpenAI itself, OpenRouter, Azure, a local
+      # Ollama (http://localhost:11434, key not needed) ...
+      api-key: ${AI_API_KEY:not-needed}
+      base-url: ${AI_BASE_URL:https://api.openai.com}
+      chat:
+        options:
+          model: ${AI_MODEL:gpt-4o-mini}
+          temperature: 0
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 500ms
+        multiplier: 2
+        max-interval: 2s
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: ${AI_TIMEOUT_MS:20000}ms
 
 server:
   port: 8080
@@ -23,12 +43,18 @@ smartquery:
     initial-delay-ms: 3000
     fixed-delay-ms: 30000
   ai:
-    # Any OpenAI-compatible endpoint works (OpenAI, OpenRouter, local Ollama...).
+    # false = deterministic analyzer only, no LLM calls at all
     enabled: ${AI_ENABLED:false}
-    base-url: ${AI_BASE_URL:https://api.openai.com/v1}
-    api-key: ${AI_API_KEY:}
-    model: ${AI_MODEL:gpt-4o-mini}
-    timeout-ms: ${AI_TIMEOUT_MS:20000}
+    # Max time a request waits for the LLM planner before answering with the
+    # rule-based plan (the LLM plan is still stored for next time).
+    plan-timeout-ms: ${AI_PLAN_TIMEOUT_MS:1500}
+  warmup:
+    # Pre-planned at startup so the first click in the UI is fast.
+    questions:
+      - "Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"
+      - "Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi"
+      - "Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi"
+      - "Chi ha saltato l'ultimo appuntamento?"
 
 logging:
   level:

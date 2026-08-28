@@ -4,10 +4,9 @@ import com.fisiodesk.smartquery.domain.ClinicalNote;
 import com.fisiodesk.smartquery.domain.NoteInsight;
 import com.fisiodesk.smartquery.repository.DiarioTrattamentoRepository;
 import com.fisiodesk.smartquery.repository.NoteInsightRepository;
-import com.fisiodesk.smartquery.llm.LlmClient;
+import com.fisiodesk.smartquery.config.AiProperties;
 import com.fisiodesk.smartquery.repository.SchedaValutazioneRepository;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -37,18 +36,18 @@ public class InsightIndexer {
     private final DiarioTrattamentoRepository diarioRepository;
     private final NoteInsightRepository insightRepository;
     private final TextAnalysisService analysisService;
-    private final LlmClient llmClient;
+    private final AiProperties aiProperties;
 
     public InsightIndexer(SchedaValutazioneRepository schedaRepository,
                           DiarioTrattamentoRepository diarioRepository,
                           NoteInsightRepository insightRepository,
                           TextAnalysisService analysisService,
-                          LlmClient llmClient) {
+                          AiProperties aiProperties) {
         this.schedaRepository = schedaRepository;
         this.diarioRepository = diarioRepository;
         this.insightRepository = insightRepository;
         this.analysisService = analysisService;
-        this.llmClient = llmClient;
+        this.aiProperties = aiProperties;
     }
 
     @Scheduled(initialDelayString = "${smartquery.indexer.initial-delay-ms:3000}",
@@ -58,14 +57,10 @@ public class InsightIndexer {
             Map<String, NoteInsight> existing = insightRepository.findAll().stream()
                     .collect(Collectors.toMap(NoteInsight::getId, Function.identity()));
 
-            List<NoteInsight> updated = new ArrayList<>();
-            updated.addAll(indexCollection(SOURCE_SCHEDE, schedaRepository.findAll(), existing));
-            updated.addAll(indexCollection(SOURCE_DIARIO, diarioRepository.findAll(), existing));
-
-            if (!updated.isEmpty()) {
-                insightRepository.saveAll(updated);
-                log.info("Indexed {} clinical notes ({} already up to date)",
-                        updated.size(), existing.size());
+            int updated = indexCollection(SOURCE_SCHEDE, schedaRepository.findAll(), existing)
+                    + indexCollection(SOURCE_DIARIO, diarioRepository.findAll(), existing);
+            if (updated > 0) {
+                log.info("Indexed {} clinical notes ({} already up to date)", updated, existing.size());
             }
         } catch (Exception e) {
             // Typically a race with the seed container at first startup; the
@@ -74,10 +69,11 @@ public class InsightIndexer {
         }
     }
 
-    private List<NoteInsight> indexCollection(String source,
-                                              List<? extends ClinicalNote> notes,
-                                              Map<String, NoteInsight> existing) {
-        List<NoteInsight> updated = new ArrayList<>();
+    /** Analyzes and saves each pending note individually, so progress survives a restart mid-batch. */
+    private int indexCollection(String source,
+                                List<? extends ClinicalNote> notes,
+                                Map<String, NoteInsight> existing) {
+        int updated = 0;
         for (ClinicalNote note : notes) {
             if (note.getDescrizione() == null || note.getDescrizione().isBlank()) {
                 continue;
@@ -89,7 +85,8 @@ public class InsightIndexer {
                 continue;
             }
             ClinicalNoteAnalysis analysis = analysisService.analyze(note.getDescrizione());
-            updated.add(toInsight(id, source, note, hash, analysis));
+            insightRepository.save(toInsight(id, source, note, hash, analysis));
+            updated++;
         }
         return updated;
     }
@@ -100,7 +97,7 @@ public class InsightIndexer {
      * disabling the LLM keeps the richer analysis already paid for.
      */
     private boolean shouldUpgrade(NoteInsight current) {
-        return llmClient.isEnabled() && !"llm".equals(current.getAnalyzer());
+        return aiProperties.enabled() && !"llm".equals(current.getAnalyzer());
     }
 
     private NoteInsight toInsight(String id, String source, ClinicalNote note,

@@ -1,8 +1,9 @@
 package com.fisiodesk.smartquery.web;
 
-import com.fisiodesk.smartquery.llm.LlmClient;
+import com.fisiodesk.smartquery.config.AiProperties;
 import com.fisiodesk.smartquery.repository.NoteInsightRepository;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,11 +13,15 @@ import org.springframework.web.bind.annotation.RestController;
 public class StatsController {
 
     private final NoteInsightRepository insightRepository;
-    private final LlmClient llmClient;
+    private final AiProperties aiProperties;
+    private final String model;
 
-    public StatsController(NoteInsightRepository insightRepository, LlmClient llmClient) {
+    public StatsController(NoteInsightRepository insightRepository,
+                           AiProperties aiProperties,
+                           @Value("${spring.ai.openai.chat.options.model}") String model) {
         this.insightRepository = insightRepository;
-        this.llmClient = llmClient;
+        this.aiProperties = aiProperties;
+        this.model = model;
     }
 
     /** Small status endpoint used by the UI footer and handy for smoke tests. */
@@ -26,7 +31,7 @@ public class StatsController {
                 "notesIndexed", insightRepository.count(),
                 "analyzedByLlm", insightRepository.countByAnalyzer("llm"),
                 "analyzedByHeuristic", insightRepository.countByAnalyzer("heuristic"),
-                "aiEnabled", llmClient.isEnabled(),
-                "aiModel", llmClient.isEnabled() ? llmClient.model() : "n/a");
+                "aiEnabled", aiProperties.enabled(),
+                "aiModel", aiProperties.enabled() ? model : "n/a");
     }
 }

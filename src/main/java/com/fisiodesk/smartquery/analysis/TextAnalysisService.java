@@ -1,11 +1,11 @@
 package com.fisiodesk.smartquery.analysis;
 
-import com.fisiodesk.smartquery.llm.LlmClient;
-import com.fisiodesk.smartquery.llm.LlmException;
+import com.fisiodesk.smartquery.config.AiProperties;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,25 +23,48 @@ public class TextAnalysisService {
 
     private final HeuristicClinicalTextAnalyzer heuristicAnalyzer;
     private final LlmClinicalTextAnalyzer llmAnalyzer;
-    private final LlmClient llmClient;
+    private final AiProperties aiProperties;
 
     public TextAnalysisService(HeuristicClinicalTextAnalyzer heuristicAnalyzer,
                                LlmClinicalTextAnalyzer llmAnalyzer,
-                               LlmClient llmClient) {
+                               AiProperties aiProperties) {
         this.heuristicAnalyzer = heuristicAnalyzer;
         this.llmAnalyzer = llmAnalyzer;
-        this.llmClient = llmClient;
+        this.aiProperties = aiProperties;
     }
 
     public ClinicalNoteAnalysis analyze(String text) {
-        if (llmClient.isEnabled()) {
-            try {
-                return llmAnalyzer.analyze(text);
-            } catch (LlmException e) {
-                log.warn("Falling back to heuristic analyzer: {}", e.getMessage());
-            }
+        ClinicalNoteAnalysis lexical = heuristicAnalyzer.analyze(text);
+        if (!aiProperties.enabled()) {
+            return lexical;
         }
-        return heuristicAnalyzer.analyze(text);
+        try {
+            return merge(llmAnalyzer.analyze(text), lexical);
+        } catch (RuntimeException e) {
+            log.warn("Falling back to heuristic analyzer: {}", e.getMessage());
+            return lexical;
+        }
+    }
+
+    /**
+     * Combines the model's reading with the lexicon's. Anatomical areas are a
+     * closed vocabulary where the lexicon is precise and small models are not
+     * (they tend to list every enum value): the model's areas only count when
+     * the lexicon found none. For the clinical trend the model is trusted
+     * unless the lexicon found explicit markers pointing the other way or the
+     * model saw no signal at all - "situazione stazionaria" or "non migliora"
+     * must never be neutralised. Evidence always comes from the model.
+     */
+    static ClinicalNoteAnalysis merge(ClinicalNoteAnalysis llm, ClinicalNoteAnalysis lexical) {
+        Set<BodyArea> areas = lexical.bodyAreas().isEmpty() ? llm.bodyAreas() : lexical.bodyAreas();
+
+        int score = llm.improvementScore();
+        boolean lexiconDisagrees = lexical.improvementScore() != 0
+                && Integer.signum(lexical.improvementScore()) != Integer.signum(score);
+        if (lexiconDisagrees) {
+            score = lexical.improvementScore();
+        }
+        return new ClinicalNoteAnalysis(areas, score, llm.evidence(), llm.analyzer());
     }
 
     /** Stable fingerprint of the note text, used to skip re-analysis of unchanged notes. */

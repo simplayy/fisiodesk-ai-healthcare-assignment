@@ -1,19 +1,21 @@
 package com.fisiodesk.smartquery.nlq;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import com.fisiodesk.smartquery.analysis.BodyArea;
-import com.fisiodesk.smartquery.llm.LlmClient;
-import com.fisiodesk.smartquery.llm.LlmException;
 import java.util.EnumSet;
-import java.util.Locale;
+import java.util.List;
 import java.util.Set;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.stereotype.Component;
 
 /**
- * Translates the professional's question into a {@link QueryPlan} using the
- * LLM. This is the only per-query LLM call in the system, on a very short
- * prompt; the notes themselves are never sent at query time.
+ * Translates the professional's question into a {@link QueryPlan} with the
+ * LLM. The output is constrained to a JSON schema derived from
+ * {@link Extraction}, so the model can only answer with valid field names
+ * and enum values; what remains to the model is the semantics.
  */
 @Component
 public class LlmQueryPlanner implements QueryPlanner {
@@ -22,68 +24,76 @@ public class LlmQueryPlanner implements QueryPlanner {
 
     private static final String SYSTEM_PROMPT = """
             Traduci la domanda di un professionista sanitario in un filtro strutturato.
-            Rispondi SOLO con un oggetto JSON con questi campi:
-            - "body_areas": array tra LUMBAR, CERVICAL, SHOULDER, KNEE, HIP, OTHER
-              (vuoto se la domanda non cita una zona anatomica).
-              Nota: "dolore lombare", "mal di schiena", "lombalgia", "low back pain",
-              "colpo della strega" indicano tutti LUMBAR.
-            - "require_improvement": true se la domanda chiede pazienti che sono migliorati.
-            - "require_worsening": true se chiede pazienti peggiorati o non migliorati.
-            - "window_months": finestra temporale in mesi citata nella domanda (default 3).
-            - "missed_last_appointment": true se la domanda chiede chi ha saltato
-              l'ultimo appuntamento / non si e' presentato.
-
-            Fai molta attenzione alle negazioni: "non mostrano miglioramento",
-            "non migliorati", "senza miglioramento" significano require_worsening=true
-            e require_improvement=false.
+            "dolore lombare", "mal di schiena", "lombalgia", "low back pain",
+            "colpo della strega" indicano tutti l'area LUMBAR.
+            Pazienti migliorati, guariti, recuperati, con progressi, che stanno meglio:
+            requireImprovement=true.
+            Pazienti peggiorati, non migliorati, senza miglioramento, stazionari:
+            requireWorsening=true e requireImprovement=false.
 
             Esempi:
             "Pazienti con dolore lombare migliorati negli ultimi 3 mesi che hanno
             saltato l'ultimo appuntamento" ->
-            {"body_areas":["LUMBAR"],"require_improvement":true,"require_worsening":false,
-             "window_months":3,"missed_last_appointment":true}
+            {"bodyAreas":["LUMBAR"],"requireImprovement":true,"requireWorsening":false,
+             "windowMonths":3,"missedLastAppointment":true}
             "Pazienti con lombalgia che non mostrano miglioramento negli ultimi 6 mesi" ->
-            {"body_areas":["LUMBAR"],"require_improvement":false,"require_worsening":true,
-             "window_months":6,"missed_last_appointment":false}
+            {"bodyAreas":["LUMBAR"],"requireImprovement":false,"requireWorsening":true,
+             "windowMonths":6,"missedLastAppointment":false}
+            "Pazienti con cervicalgia guariti negli ultimi 2 mesi" ->
+            {"bodyAreas":["CERVICAL"],"requireImprovement":true,"requireWorsening":false,
+             "windowMonths":2,"missedLastAppointment":false}
             "Chi ha saltato l'ultimo appuntamento?" ->
-            {"body_areas":[],"require_improvement":false,"require_worsening":false,
-             "window_months":3,"missed_last_appointment":true}
+            {"bodyAreas":[],"requireImprovement":false,"requireWorsening":false,
+             "windowMonths":3,"missedLastAppointment":true}
             """;
 
-    private final LlmClient llmClient;
-    private final ObjectMapper objectMapper;
+    /** Shape the model must fill in; descriptions end up in the JSON schema. */
+    record Extraction(
+            @JsonPropertyDescription("Aree anatomiche citate nella domanda, vuoto se nessuna")
+            List<BodyArea> bodyAreas,
+            @JsonPropertyDescription("true se si chiedono pazienti migliorati/guariti")
+            boolean requireImprovement,
+            @JsonPropertyDescription("true se si chiedono pazienti peggiorati o non migliorati")
+            boolean requireWorsening,
+            @JsonPropertyDescription("Finestra temporale in mesi citata nella domanda, 3 se assente")
+            int windowMonths,
+            @JsonPropertyDescription("true se si chiede chi ha saltato l'ultimo appuntamento")
+            boolean missedLastAppointment) {
+    }
 
-    public LlmQueryPlanner(LlmClient llmClient, ObjectMapper objectMapper) {
-        this.llmClient = llmClient;
-        this.objectMapper = objectMapper;
+    private final ChatClient chatClient;
+    private final BeanOutputConverter<Extraction> converter = new BeanOutputConverter<>(Extraction.class);
+    private final OpenAiChatOptions options;
+
+    public LlmQueryPlanner(ChatClient chatClient) {
+        this.chatClient = chatClient;
+        this.options = OpenAiChatOptions.builder()
+                .responseFormat(ResponseFormat.builder()
+                        .type(ResponseFormat.Type.JSON_SCHEMA)
+                        .jsonSchema(converter.getJsonSchema())
+                        .build())
+                .build();
     }
 
     @Override
     public QueryPlan plan(String question) {
-        String raw = llmClient.complete(SYSTEM_PROMPT, "Domanda:\n" + question);
-        try {
-            JsonNode root = objectMapper.readTree(raw);
-            Set<BodyArea> areas = EnumSet.noneOf(BodyArea.class);
-            for (JsonNode area : root.path("body_areas")) {
-                try {
-                    areas.add(BodyArea.valueOf(area.asText().trim().toUpperCase(Locale.ROOT)));
-                } catch (IllegalArgumentException ignored) {
-                    // skip unknown labels
-                }
-            }
-            int window = root.path("window_months").asInt(QueryPlan.DEFAULT_WINDOW_MONTHS);
-            return new QueryPlan(
-                    areas,
-                    root.path("require_improvement").asBoolean(false),
-                    root.path("require_worsening").asBoolean(false),
-                    Math.max(1, Math.min(24, window)),
-                    root.path("missed_last_appointment").asBoolean(false),
-                    NAME);
-        } catch (LlmException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new LlmException("Unparseable LLM plan: " + raw, e);
+        Extraction extraction = chatClient.prompt()
+                .options(options)
+                .system(SYSTEM_PROMPT)
+                .user("Domanda:\n" + question)
+                .call()
+                .entity(converter);
+        if (extraction == null) {
+            throw new IllegalStateException("Empty plan from the model");
         }
+        Set<BodyArea> areas = EnumSet.noneOf(BodyArea.class);
+        if (extraction.bodyAreas() != null) {
+            areas.addAll(extraction.bodyAreas());
+        }
+        int window = extraction.windowMonths() <= 0
+                ? QueryPlan.DEFAULT_WINDOW_MONTHS : Math.min(24, extraction.windowMonths());
+        return new QueryPlan(areas, extraction.requireImprovement(), extraction.requireWorsening(),
+                window, extraction.missedLastAppointment(), NAME);
     }
 
     @Override

@@ -3,29 +3,22 @@ package com.fisiodesk.smartquery.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration for the optional LLM integration. The client speaks the
- * OpenAI-compatible chat completions protocol, so the same code works against
- * OpenAI, Azure OpenAI, OpenRouter or a self-hosted Ollama instance; only
- * base-url/model/api-key change. When {@code enabled} is false the whole
- * system runs on the deterministic analyzer.
+ * Switches for the optional LLM integration. Provider, model, credentials,
+ * timeouts and retries are configured through the standard Spring AI
+ * properties ({@code spring.ai.openai.*}, {@code spring.ai.retry.*},
+ * {@code spring.http.client.*}); this only holds what is specific to this
+ * service.
+ *
+ * @param enabled       when false the system runs entirely on the rule-based analyzer
+ * @param planTimeoutMs how long a user request waits for the LLM planner
+ *                      before answering with the rule-based plan instead
  */
 @ConfigurationProperties(prefix = "smartquery.ai")
-public record AiProperties(
-        boolean enabled,
-        String baseUrl,
-        String apiKey,
-        String model,
-        int timeoutMs) {
+public record AiProperties(boolean enabled, int planTimeoutMs) {
 
     public AiProperties {
-        if (baseUrl == null || baseUrl.isBlank()) {
-            baseUrl = "https://api.openai.com/v1";
-        }
-        if (model == null || model.isBlank()) {
-            model = "gpt-4o-mini";
-        }
-        if (timeoutMs <= 0) {
-            timeoutMs = 20_000;
+        if (planTimeoutMs <= 0) {
+            planTimeoutMs = 1_500;
         }
     }
 }
