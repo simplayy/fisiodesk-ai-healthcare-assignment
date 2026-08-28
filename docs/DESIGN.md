@@ -1,17 +1,17 @@
 # Note di design
 
-Dettaglio delle scelte. Il quadro generale è nel [README](../README.md), le risposte alle domande della consegna in [RISPOSTE-CONSEGNA.md](RISPOSTE-CONSEGNA.md).
+Le scelte tecniche per esteso. Il quadro generale è nel [README](../README.md), le risposte alla consegna in [RISPOSTE-CONSEGNA.md](RISPOSTE-CONSEGNA.md).
 
-## Scomposizione del problema
+## Il problema, diviso in quattro
 
-| Sotto-problema | Natura | Dove si risolve |
+| Cosa chiede la query target | Che problema è | Quando lo risolvo |
 |---|---|---|
-| "dolore lombare" tra sinonimi e testo libero | comprensione del testo | indicizzazione (batch) |
-| "hanno mostrato miglioramento" | comprensione del testo, direzionale | indicizzazione (batch) |
-| "negli ultimi 3 mesi" | filtro temporale | query (real-time) |
-| "hanno saltato l'ultimo appuntamento" | dato strutturato | query (real-time) |
+| "dolore lombare", scritto in molti modi | capire un testo | in anticipo, quando indicizzo |
+| "hanno mostrato miglioramento" | capire un testo, e in che direzione va | in anticipo, quando indicizzo |
+| "negli ultimi 3 mesi" | filtro su una data | a ogni ricerca |
+| "hanno saltato l'ultimo appuntamento" | filtro su un campo | a ogni ricerca |
 
-I primi due sono costosi e ambigui: si risolvono una volta per nota e si memorizzano. Gli altri due sono filtri banali: si risolvono a ogni query.
+I primi due sono lenti e ambigui: li risolvo una volta per nota e salvo il risultato. Gli altri due sono filtri banali. Tutto il resto del progetto viene da questa divisione.
 
 ## Architettura
 
@@ -54,103 +54,109 @@ flowchart LR
     AN --> NI
 ```
 
-## La collection `note_insights`
+In basso quello che succede in background, in alto quello che succede quando qualcuno cerca.
+
+## La tabella `note_insights`
+
+Un documento per ogni nota analizzata.
 
 ```javascript
 {
-  _id: "schede_valutazione:607f...9105",  // upsert idempotente
+  _id: "schede_valutazione:607f...9105",  // collection di origine + id della nota
   note_id, source_collection,
-  paziente_id, professionista_id, data,   // denormalizzati per query dirette
-  text_hash: "sha256...",                 // rilevamento modifiche
+  paziente_id, professionista_id, data,   // copiati dalla nota, per filtrare qui
+  text_hash: "sha256...",                 // impronta del testo
   body_areas: ["LUMBAR"],
-  improvement_score: 2,                   // -3..+3
+  improvement_score: 2,                   // da -3 a +3
   excerpt, evidence: ["+netto miglioramento", ...],
-  analyzer: "llm" | "heuristic",
+  analyzer: "llm" | "heuristic",          // chi l'ha letta
   analyzed_at
 }
 ```
 
-Indici: su `note_insights` `data`, `(paziente_id, data)`, `(professionista_id, data)`; su `eventi_calendario` `(paziente_id, data)`, che rende la ricerca dell'ultimo appuntamento un seek.
+L'id è costruito, non casuale: rianalizzare una nota sovrascrive il documento invece di duplicarlo. L'impronta del testo serve a capire se la nota è stata modificata: se è uguale, la nota viene saltata e non costa una chiamata all'AI.
 
-## Semantica delle condizioni
+Indici su `data`, `(paziente_id, data)` e `(professionista_id, data)`, più `(paziente_id, data)` su `eventi_calendario`, che rende immediata la ricerca dell'ultimo appuntamento di un paziente.
 
-- **Area**: una nota conta solo se taggata con l'area richiesta, e il miglioramento si somma solo su quelle note. Chi migliora della cervicalgia non passa una query sulla lombalgia.
-- **Miglioramento nel periodo**: somma degli `improvement_score` in finestra maggiore di zero.
-- **Ultimo appuntamento saltato**: l'evento più recente con `data <= referenceDate` ha `stato == "no_show"`. Un ultimo evento `cancellato` non conta (il paziente ha avvisato), un `prenotato` con data passata nemmeno (dato sporco).
+## Le regole con cui decide
 
-## Analizzatore a dizionario
+- **Parte del corpo**: una nota conta solo se parla dell'area richiesta, e il miglioramento si somma solo su quelle note. Chi migliora della cervicale non passa una ricerca sulla lombalgia.
+- **Miglioramento nel periodo**: somma dei punteggi delle note in finestra maggiore di zero.
+- **Ultimo appuntamento saltato**: l'appuntamento più recente fino alla data di riferimento ha stato `no_show`. Se è `cancellato` non conta, il paziente ha avvisato. Se è `prenotato` con data già passata non conta: è un dato rimasto indietro, non una prova di assenza.
 
-Termini fisioterapici italiani, con tre livelli di matching in quest'ordine:
+## Il dizionario di termini
 
-1. **Frasi positive che contengono negazioni**: "nessun dolore", "senza limitazioni".
+Serve quando l'AI non c'è, e come controllo su quello che l'AI risponde. Cerca in tre passaggi, in quest'ordine:
+
+1. **Frasi positive che contengono una negazione**: "nessun dolore", "senza limitazioni". Vanno cercate per prime, altrimenti il "nessun" porterebbe fuori strada.
 2. **Negazioni di miglioramento**: "non migliora", "non risponde", "nessun miglioramento".
-3. **Radici generiche** ("miglior", "recuper", "peggior", "stazionar") con guardia: un termine positivo preceduto entro 12 caratteri da "non/nessun/senza" non conta.
+3. **Radici di parole** ("miglior", "recuper", "peggior", "stazionar"), che coprono tutte le forme. Con una guardia: se entro 12 caratteri prima c'è "non", "nessun" o "senza", il termine positivo non conta.
 
-Punteggio = somma dei match, limitato a più o meno 3. Ogni match finisce in `evidence`, quindi il professionista vede perché un paziente è in lista. Da solo, sul dataset demo, produce già il risultato esatto della query target.
+Il punteggio è la somma di quello che trova, limitato tra -3 e +3, e ogni termine finisce in `evidence`, così si vede su cosa si è basato. Da solo, senza AI, produce già il risultato corretto della query target sui dati di esempio.
 
-## Multi-tenancy
+## Ogni professionista vede solo i suoi pazienti
 
-Ogni nota porta `professionista_id`. Con `professionistaId` nella richiesta si leggono solo le note di quel professionista, tramite l'indice `(professionista_id, data)`: sul dataset `…9021` vede Rossi, Bianchi e Romano, `…9023` vede Colombo, `…9022` nessuno per la query target. Senza, la vista è amministrativa.
+Ogni nota porta l'id di chi l'ha scritta. Se la richiesta indica un professionista, il sistema legge solo le sue note, con l'indice apposta: `…9021` vede Rossi, Bianchi e Romano, `…9023` vede Colombo, `…9022` nessuno per la query target. Senza indicazione la vista è completa.
 
-In produzione l'id arriverebbe dal token dell'utente e il servizio non lo accetterebbe dal client; qui è nel body per poter mostrare lo scoping nella demo.
+Nel prodotto vero l'id arriverebbe da chi ha fatto il login. Qui è nella richiesta per poterlo mostrare nella demo.
 
-## Spiegabilità
+## La spiegazione allegata a ogni risposta
 
-Ogni risposta porta un blocco `explain` costruito da quello che l'esecuzione ha fatto, senza chiamate AI aggiuntive:
+Il blocco `explain` è costruito da quello che il sistema ha fatto davvero, senza chiedere niente all'AI:
 
-- origine del filtro (AI in questa richiesta, filtro già salvato, parser a regole per timeout o AI assente) e tempo di attesa;
-- parole della domanda riconosciute e come sono state lette (`"dolore lombare" -> LUMBAR`);
-- tempi e conteggi di ogni tappa (note nella finestra, note sull'area, pazienti valutati);
-- da dove viene la data di riferimento;
-- ogni paziente escluso con il motivo ("nessun miglioramento nell'area richiesta (punteggio -7 su 4 note)", "ultimo appuntamento prenotato il 28/12/2024, non saltato").
+- da dove viene il filtro (AI in questa richiesta, filtro già salvato, o parser a regole perché l'AI mancava o era lenta) e quanto si è aspettato;
+- quali parole della domanda sono state riconosciute e come sono state lette;
+- durata e conteggi di ogni passaggio;
+- da dove viene la data usata come "oggi";
+- ogni paziente escluso con il motivo: "nessun miglioramento nell'area richiesta (punteggio -7 su 4 note)", "ultimo appuntamento prenotato il 28/12/2024, non saltato".
 
-Non è un riassunto generato dal modello: costerebbe una chiamata a ogni query e sarebbe meno affidabile dei dati. La UI lo mostra in un popup e evidenzia nelle note i termini che hanno pesato. Link diretto: `/?q=<domanda>&professionista=<id>&spiega=1`.
+Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ricerca e sarebbe meno affidabile dei dati. Nell'interfaccia si apre dal link "Come è nato il risultato". Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
 
-## Integrazione LLM
+## Come è integrata l'AI
 
-- **Libreria**: Spring AI 1.1, starter OpenAI. Parla il protocollo chat-completions, quindi lo stesso codice va con OpenAI, Gemini, OpenRouter, Azure o Ollama on-premise (in sanità conta: i testi possono non uscire dall'infrastruttura). Retry, timeout e serializzazione li fa la libreria.
-- **Structured output**: risposta vincolata a uno schema JSON generato dai record Java (`BeanOutputConverter` più `response_format: json_schema`). Il modello può sbagliare il significato, non la forma.
-- **Dove**: analisi della nota in indicizzazione; traduzione domanda in filtro, una volta per domanda distinta (salvata in `query_plans`).
-- **Costo**: O(note scritte + domande distinte), non O(query). 1.000 professionisti con 20 note al giorno fanno circa 20k chiamate corte al giorno.
-- **Quote**: l'indexer è ritmato (`AI_INDEXER_RPM`) e può usare un modello diverso dal planner (`AI_ANALYSIS_MODEL`), perché i limiti sono per modello: una reindicizzazione non rallenta le domande.
-- **Budget di latenza**: `plan-timeout-ms`, 1,5 s di default e 1,8 s con Gemini. Oltre, risponde il parser a regole mentre l'LLM finisce in background e il filtro viene salvato.
-- **Concorrenza**: richieste sulla stessa domanda condividono una sola chiamata; pool di 16 thread perché una raffica di domande nuove non si accodi; domande suggerite pre-interpretate all'avvio; client "scaldato" con chiamate reali (dopo un riavvio la prima paga apertura HTTPS e JIT, circa 0,8 s in più).
-- **HTTP/1.1 forzato**: con HTTP/2 il client JDK multiplexava tutto su una connessione e il provider serviva le chiamate in serie (dieci domande insieme tornavano a scalini di 60 ms, l'ultima fuori budget).
-- **Guardrail**: le aree del dizionario prevalgono, i flag espliciti trovati dal dizionario vengono aggiunti, "peggioramento" vince su "miglioramento". Su 10 domande di controllo il modello locale da 1,5B da solo ne prende 6, col guardrail 10. Con Gemini Flash-Lite erano già 10 senza.
-- **Guasti**: timeout, un retry, fallback per singola chiamata; quando l'LLM torna, le note analizzate col fallback vengono rilette una volta. Niente da riarmare a mano.
-- **Modello locale**: `qwen2.5:1.5b`, gira su CPU con 8 GB di RAM insieme a MongoDB. Con una GPU basta cambiare `AI_MODEL` (per esempio Qwen3 8B).
+- **Libreria**: Spring AI 1.1. Parla il protocollo delle API OpenAI, che è ormai lo standard: lo stesso codice va con OpenAI, Gemini, OpenRouter, Azure o un modello installato in azienda. L'ultimo caso in sanità conta, perché i testi clinici possono non poter uscire dall'infrastruttura.
+- **Risposta a formato fisso**: al modello non si chiede testo libero ma di riempire dei campi prestabiliti, definiti da uno schema generato dal codice Java. Può sbagliare il contenuto, non la forma.
+- **Dove interviene**: quando legge una nota in indicizzazione, e quando traduce una domanda mai vista in un filtro. Il filtro viene salvato, quindi succede una volta per domanda.
+- **Costo**: proporzionale alle note scritte e alle domande diverse, non alle ricerche. Mille professionisti con venti note al giorno fanno circa ventimila chiamate brevi al giorno.
+- **Quote del fornitore**: si contano le richieste al minuto, e si contano per modello. Per questo l'indicizzazione può usare un modello diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande dei professionisti.
+- **Tempo massimo di attesa**: 1,5 secondi, 1,8 con Gemini. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo.
+- **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata. Fino a 16 chiamate contemporanee, così una raffica di domande diverse non si accoda. Le domande suggerite sono già interpretate all'avvio, dove si fanno anche alcune chiamate a vuoto per scaldare il collegamento: la prima dopo un riavvio costa circa 0,8 secondi in più solo per aprire la connessione.
+- **HTTP/1.1 forzato**: con HTTP/2 il client Java mandava tutte le chiamate su una connessione sola e il fornitore le serviva in fila. Dieci domande insieme tornavano a scaglioni e l'ultima sforava.
+- **Controllo sull'AI**: le aree trovate dal dizionario hanno la precedenza, i filtri espliciti che riconosce vengono aggiunti, e in contrasto "peggioramento" vince su "miglioramento". Su dieci domande di prova il modello piccolo in locale da solo ne prende sei, col controllo dieci. Con Gemini erano dieci già da solo.
+- **Guasti**: tempo massimo, un secondo tentativo, poi il dizionario. Le note lette dal dizionario vengono rilette quando l'AI torna. Niente da riattivare a mano.
+- **Modello locale**: `qwen2.5:1.5b`, gira senza scheda grafica con 8 GB di memoria insieme al database. Con una GPU basta cambiare `AI_MODEL`.
 
-## Misure di carico
+## Quanto è veloce, misurato
 
-`scripts/load-test.py` sulla demo con Gemini attivo, server a 4 core condiviso con MongoDB e col generatore di carico.
+Con `scripts/load-test.py` sulla demo con Gemini attivo, su un server a 4 processori condiviso con il database e col generatore di carico.
 
-| Scenario | Richieste | mediana | 95° perc. | massimo |
+| Situazione | Richieste | mediana | 95° perc. | la più lenta |
 |---|---|---|---|---|
-| 60 professionisti insieme, domande già note | 300 | 56 ms | 141 ms | 156 ms |
-| 100 professionisti insieme, domande già note | 500 | 95 ms | 245 ms | 367 ms |
+| 60 professionisti insieme, domande già viste | 300 | 56 ms | 141 ms | 156 ms |
+| 100 professionisti insieme, domande già viste | 500 | 95 ms | 245 ms | 367 ms |
 | 60 professionisti insieme, con domande mai viste | 300 | 121 ms | 1387 ms | 1627 ms |
 | 10 domande mai viste nello stesso istante | 10 | 1068 ms | 1264 ms | 1264 ms |
 
-Il caso peggiore è la terza riga, con la chiamata AI dentro la richiesta: resta sotto i 2 s. Dopo un riavvio le note non vengono rianalizzate (verificato: 32 prima e dopo, zero chiamate) e i filtri restano, perché stanno in MongoDB.
+Il caso peggiore è la terza riga, con l'AI dentro la richiesta: resta sotto i 2 secondi. Dopo un riavvio le note non vengono rilette (32 prima, 32 dopo, zero chiamate) e i filtri restano, perché stanno nel database.
 
-## Altri trade-off
+## Le scelte discutibili
 
-- **Modello piccolo locale più guardrail, invece di un modello grande.** Un 1,5B su CPU gira ovunque e tiene i testi in casa, ma sbaglia circa una domanda su tre sui marcatori espliciti; il dizionario recupera quei casi.
-- **Correlazione nel service invece di una `$lookup` a tre stadi.** Query separate e indicizzate: più leggibile e testabile, qualche round-trip in più. Con volumi reali si passerebbe a una `$lookup` o a una vista per professionista.
-- **Gemini nell'overlay**: modelli separati per domande e note, indexer ritmato, budget 1,8 s. Sul piano gratuito il planner copre 15 domande nuove al minuto.
+- **Modello piccolo in locale più dizionario, invece di un modello grande.** Gira ovunque e tiene i testi clinici in casa, ma sbaglia circa una domanda su tre sui termini espliciti; il dizionario recupera quei casi. Con un modello grande il dizionario non serve, ma non fa danno.
+- **Unisco i dati nel codice invece che nel database.** MongoDB saprebbe unire le tabelle in una query sola (`$lookup`), ma tre ricerche separate e indicizzate sono più leggibili e più facili da testare. Costa qualche viaggio in più, irrilevante a questi volumi; con volumi veri si passerebbe alla query unica.
+- **Gemini per la demo online.** Modelli separati per domande e note, freno sulle chiamate, tempo massimo 1,8 secondi. Con il piano gratuito si coprono 15 domande nuove al minuto: oltre serve il piano a pagamento, non codice diverso.
 
-## Limiti noti
+## Cosa non fa
 
-- **I candidati vengono dalle note.** "Chi ha saltato l'ultimo appuntamento?" considera solo chi ha almeno una nota nella finestra: chi non è in cura da mesi non compare. Per una domanda di sola compliance servirebbe partire da `eventi_calendario`.
-- **Cancellazioni non riconciliate.** Se una nota viene eliminata, il suo documento in `note_insights` resta.
-- **Domande senza filtri riconosciuti.** "ciao" restituisce tutti i pazienti con note nel periodo invece di un errore. La negazione sul no-show ("che non hanno saltato") non è gestita.
-- **Modello locale e budget.** Con Ollama su CPU una domanda nuova supera quasi sempre il budget: risponde il parser a regole e il filtro dell'LLM serve dalla volta dopo.
+- **I candidati vengono sempre dalle note.** "Chi ha saltato l'ultimo appuntamento?" guarda solo i pazienti con almeno una nota nel periodo: chi non è in cura da mesi non compare. Per una domanda di soli appuntamenti bisognerebbe partire dal calendario.
+- **Le note cancellate restano.** Se una nota viene eliminata dal gestionale, la sua analisi resta. Servirebbe una pulizia periodica.
+- **Domande che non capisce.** Se non riconosce né area, né andamento, né filtro sugli appuntamenti ("ciao"), restituisce tutti i pazienti del periodo invece di dire che non ha capito. E non gestisce la negazione sugli appuntamenti: "che non hanno saltato" viene letto come "che hanno saltato".
+- **Modello locale e tempo massimo.** Senza scheda grafica una domanda nuova sfora quasi sempre: risponde il parser a regole e il filtro dell'AI serve dalla volta dopo. In locale l'AI dà il suo valore sulle note, non sull'interpretazione immediata.
 
-## Possibili sviluppi (non implementati)
+## Cosa farei dopo
 
-- **Freshness**: change stream di MongoDB al posto del polling a 30 s.
-- **Vector search**: un embedding per nota e indice vettoriale di Atlas per domande aperte ("pazienti con quadro simile a…"). La struttura non cambia.
-- **Qualità**: golden set di note etichettate dai clinici, confronto periodico dizionario contro LLM contro umano.
+- **Aggiornamento immediato**: farsi avvisare da MongoDB quando una nota viene scritta, invece di controllare ogni 30 secondi.
+- **Ricerca per somiglianza**: rappresentare ogni nota con dei vettori e cercare per somiglianza, per domande aperte tipo "pazienti con un quadro simile a questo". La struttura non cambierebbe.
+- **Misurare la qualità**: far etichettare un gruppo di note dai fisioterapisti e confrontare periodicamente dizionario, AI e giudizio umano.
 
 ## Configurazione
 
@@ -169,13 +175,13 @@ Il caso peggiore è la terza riga, con la chiamata AI dentro la richiesta: resta
 | `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
 | `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` negli overlay AI) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
 
-## Troubleshooting
+## Se qualcosa non va
 
-- **Domande nuove servite dal parser a regole**: l'AI ha superato `AI_PLAN_TIMEOUT_MS` o il provider ha risposto 429. Nel log c'è la durata di ogni chiamata (`LLM planned '...' in N ms`). Sul piano gratuito Gemini il limite è 15 domande nuove al minuto per modello.
+- **Le domande nuove vengono servite dal parser a regole invece che dall'AI**: l'AI ha superato il tempo massimo (`AI_PLAN_TIMEOUT_MS`) o il fornitore ha risposto che le richieste sono troppe. Nel log c'è la durata di ogni chiamata. Col piano gratuito di Gemini il limite è 15 domande nuove al minuto per modello.
 - **Ripartire da zero**: `docker compose down -v && docker compose up -d --build`.
-- **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`. Log: `docker logs fisiodesk-smart-query`.
-- **Mongo Express** (porta 8081) è senza password ma ascolta solo su `127.0.0.1`.
-- **AI locale lenta al primo avvio**: il download del modello si segue con `docker logs fisiodesk-ollama-pull`; la prima lettura delle note su CPU richiede qualche minuto, nel frattempo le query rispondono col dizionario.
+- **A che punto è l'indicizzazione**: `curl localhost:8080/api/stats`. Log: `docker logs fisiodesk-smart-query`.
+- **Mongo Express** (porta 8081) è senza password ma risponde solo dal computer stesso.
+- **Modalità AI locale lenta al primo avvio**: sta scaricando il modello, si segue con `docker logs fisiodesk-ollama-pull`. La prima lettura delle note senza scheda grafica richiede qualche minuto, e intanto le ricerche funzionano col dizionario.
 
 ## Riferimenti
 
