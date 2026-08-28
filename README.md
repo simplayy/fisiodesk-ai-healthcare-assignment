@@ -4,7 +4,7 @@ Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un profes
 
 > *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
 
-e ottiene in meno di 100 ms la lista dei pazienti corrispondenti, con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato.
+e ottiene in poche decine di millisecondi la lista dei pazienti corrispondenti, con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato: durante la ricerca non c'è nessuna chiamata AI.
 
 **Stack**: Java 17 · Spring Boot 3.5 · Spring AI 1.1 · Gradle · MongoDB — allineato allo stack esistente di FisioDesk/Dottai, così i componenti descritti qui si integrano nel backend attuale senza introdurre un nuovo runtime (Spring Boot 3.5 è la linea che l'azienda usa oggi; Spring AI 1.1 è la versione che la supporta, la 2.0 richiede Boot 4). Frontend demo in HTML/JS statico servito dalla stessa applicazione.
 
@@ -51,6 +51,8 @@ Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi   -> A
 Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi               -> Giuseppe Verdi
 Chi ha saltato l'ultimo appuntamento?                                       -> tutti i no-show recenti
 ```
+
+Nota sui dati: `USE_CASES_AND_TESTS.md` parla di 18 schede e 16 note di diario, ma i file in `data/` ne contengono 17 e 15 (32 note in totale, tutte indicizzate); i sette casi descritti sono comunque tutti presenti.
 
 Nota sulle date: il dataset copre marzo–dicembre 2024, quindi come "oggi" viene usata la data dell'ultimo evento in calendario (31/12/2024). È sovrascrivibile con la variabile `REFERENCE_DATE` o col campo `referenceDate` della richiesta.
 
