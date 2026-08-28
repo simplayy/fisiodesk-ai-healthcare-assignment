@@ -1,18 +1,16 @@
 # FisioDesk – Query intelligenti sui dati clinici
 
-Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un professionista scrive una domanda come:
+Prototipo per il compito "AI Assistant: integrazione query intelligenti per professionisti sanitari". Un professionista scrive una domanda in italiano, per esempio la query target:
 
 > *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
 
-e ottiene la lista dei pazienti corrispondenti, con gli estratti delle schede e del diario che giustificano ogni risultato. La ricerca sui testi non chiama l'AI: le note sono già analizzate e indicizzate, quindi la risposta arriva in poche decine di millisecondi. L'AI serve solo a interpretare una domanda nuova, una volta sola e con un limite di tempo.
+e ottiene la lista dei pazienti, con gli estratti delle note cliniche che giustificano ogni risultato.
 
-**Stack**: Java 17, Spring Boot 3.5, Spring AI 1.1, Gradle, MongoDB. La consegna lascia libera la scelta del linguaggio: ho usato Java e Spring Boot perché è lo stack di FisioDesk/Dottai, quindi i componenti si integrano nel backend attuale senza aggiungere un runtime (Spring AI 1.1 è la versione compatibile con Boot 3; la 2.0 richiede Boot 4). Il frontend demo è HTML/JS statico servito dall'applicazione stessa.
+Stack: Java 17, Spring Boot 3.5, Spring AI 1.1, MongoDB. Ho scelto Java e Spring Boot perché è lo stack di FisioDesk/Dottai, così il codice si integra nel backend esistente. L'interfaccia demo è una pagina HTML/JS servita dalla stessa applicazione.
 
----
+## Come far partire il sistema
 
-## Avvio rapido
-
-Prerequisiti: Docker con Compose v2 e BuildKit (qualsiasi Docker Desktop o Docker Engine recente).
+Serve Docker con Compose v2.
 
 ```bash
 git clone https://github.com/simplayy/fisiodesk-ai-healthcare-assignment.git
@@ -20,21 +18,16 @@ cd fisiodesk-ai-healthcare-assignment
 docker compose up -d --build
 ```
 
-Servizi disponibili:
+Dopo circa un minuto (la prima volta di più, per scaricare le dipendenze):
 
-| Servizio | URL |
-|---|---|
-| Web UI + API | http://localhost:8080 |
-| API query | `POST http://localhost:8080/api/query` (opzionale `professionistaId` per lo scoping) |
-| Stato indicizzazione | `GET http://localhost:8080/api/stats` |
-| MongoDB | `localhost:27017` |
-| Mongo Express | http://localhost:8081 |
+- http://localhost:8080 interfaccia web e API
+- http://localhost:8081 Mongo Express, per guardare i dati
 
-Al primo avvio l'applicazione indicizza le note cliniche (qualche secondo in modalità deterministica); lo stato è visibile su `/api/stats` e nel piè di pagina della UI.
+All'avvio il database viene popolato con il dataset di esempio e le note vengono indicizzate. Di default non serve nessuna chiave: l'analisi dei testi usa un lessico fisioterapico. Per usare un LLM vedi "Modalità AI" più sotto.
 
-### Demo della query target
+## Demo della query target
 
-Dalla UI (http://localhost:8080) la query target è già precompilata: basta premere **Cerca**. Da terminale:
+Nell'interfaccia la query target è già scritta: basta premere **Cerca**. Da terminale:
 
 ```bash
 curl -s -X POST http://localhost:8080/api/query \
@@ -42,9 +35,11 @@ curl -s -X POST http://localhost:8080/api/query \
   -d '{"question":"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'\''ultimo appuntamento"}'
 ```
 
-Risultato atteso sul dataset demo: **Roberto Romano, Marco Colombo, Mario Rossi, Laura Bianchi** (in ordine di forza del miglioramento). Anna Ferrari è esclusa (lombalgia ma nessun miglioramento), Giuseppe Verdi è escluso (migliora ma sul rachide cervicale, e non ha saltato l'ultimo appuntamento), Francesca Ricci è esclusa (nessun dato recente).
+Risultato atteso: **Roberto Romano, Marco Colombo, Mario Rossi, Laura Bianchi** (in ordine di miglioramento). Esclusi: Anna Ferrari (lombalgia ma nessun miglioramento), Giuseppe Verdi (migliora, ma della cervicale, e non ha saltato l'ultimo appuntamento), Francesca Ricci (nessun dato recente).
 
-Altre domande supportate, per mostrare che non è un sistema a query fissa:
+Per ogni paziente la risposta mostra l'ultimo appuntamento e le note che hanno pesato. Il link "Come è nato il risultato" spiega quali parole della domanda sono state riconosciute, quanto ha impiegato ogni passaggio e chi è stato escluso e perché.
+
+Altre domande che funzionano:
 
 ```
 Pazienti con lombalgia che non mostrano miglioramento negli ultimi 3 mesi   -> Anna Ferrari
@@ -52,38 +47,9 @@ Pazienti con cervicalgia in miglioramento negli ultimi 2 mesi               -> G
 Chi ha saltato l'ultimo appuntamento?                                       -> tutti i no-show recenti
 ```
 
-Nota sui dati: `USE_CASES_AND_TESTS.md` parla di 18 schede e 16 note di diario, ma i file in `data/` ne contengono 17 e 15 (32 note in totale, tutte indicizzate); i sette casi descritti sono comunque tutti presenti.
+Il dataset copre marzo-dicembre 2024, quindi come "oggi" viene usata la data dell'ultimo evento in calendario (31/12/2024). Si può cambiare con la variabile `REFERENCE_DATE` o con il campo `referenceDate` della richiesta.
 
-Nota sulle date: il dataset copre marzo–dicembre 2024, quindi come "oggi" viene usata la data dell'ultimo evento in calendario (31/12/2024). È sovrascrivibile con la variabile `REFERENCE_DATE` o col campo `referenceDate` della richiesta.
-
-### Modalità AI (opzionale)
-
-Di default il sistema usa l'analizzatore deterministico (nessuna dipendenza esterna, risultati riproducibili). Con un LLM l'analisi delle note e l'interpretazione della domanda passano al modello; il lessico resta come verifica e come fallback.
-
-```bash
-# LLM locale via Ollama (nessuna chiave, ~1 GB di modello al primo avvio)
-docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
-
-# LLM hosted via Google Gemini (chiave in .env, vedi .env.example)
-docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
-
-# Qualunque endpoint OpenAI-compatibile
-AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
-```
-
-L'output del modello è vincolato a uno schema JSON; le chiamate hanno timeout e retry; se l'LLM non risponde il sistema degrada sull'analizzatore deterministico e non si ferma mai. Dettagli su modelli, quote e latenza in [docs/DESIGN.md](docs/DESIGN.md).
-
-Vincolo di latenza, misurato con `scripts/load-test.py` (Gemini, cache delle risposte fredda, tutti i piani dall'LLM, server a 4 core condiviso con MongoDB e col generatore di carico):
-
-| Scenario | Richieste | p50 | p95 | max |
-|---|---|---|---|---|
-| 60 utenti concorrenti | 300 | 158 ms | 391 ms | 599 ms |
-| 100 utenti concorrenti | 500 | 199 ms | 865 ms | 1296 ms |
-| 10 domande mai viste nello stesso istante (planning LLM nella richiesta) | 10 | 1150 ms | 1350 ms | 1350 ms |
-
----
-
-## Architettura
+## Come funziona
 
 ```mermaid
 flowchart LR
@@ -124,119 +90,69 @@ flowchart LR
     AN --> NI
 ```
 
-### Idea di fondo: analizzare ogni nota una volta sola
+L'idea è una sola: l'AI non lavora nel momento della ricerca, ma prima.
 
-Con il vincolo dei 2 s per 50+ professionisti concorrenti e un budget AI limitato, l'AI non può stare nel percorso di risposta della query. La pipeline è divisa in due:
+1. **Indicizzazione.** Un job (all'avvio e poi ogni 30 secondi) legge le note nuove o modificate di `schede_valutazione` e `diario_trattamenti` e per ognuna salva in `note_insights`: le aree anatomiche citate (con i sinonimi: "lombalgia", "mal di schiena", "low back pain", "colpo della strega" sono tutti `LUMBAR`), un punteggio di miglioramento da -3 a +3 (le negazioni contano: "non risponde alla terapia" è negativo) e le frasi che lo giustificano. Ogni nota viene analizzata una volta sola.
+2. **Query.** La domanda viene tradotta in un filtro: area, finestra temporale, miglioramento sì/no, appuntamento saltato sì/no. Lo fa l'LLM, controllato da un parser a regole; senza LLM lavora solo il parser. Il filtro viene salvato, così la stessa domanda non passa più dall'AI. Poi viene eseguito con normali query MongoDB su `note_insights`, `eventi_calendario` e `pazienti`: per ogni paziente si sommano i punteggi delle note nel periodo e si guarda lo stato del suo ultimo appuntamento.
 
-1. **Indicizzazione (batch, incrementale)**. Un job periodico confronta `schede_valutazione` e `diario_trattamenti` con la collection `note_insights`: ogni nota nuova o modificata (hash SHA-256 del testo) viene analizzata una sola volta e il risultato salvato: aree anatomiche citate (con i sinonimi: "lombalgia", "mal di schiena", "low back pain", "colpo della strega" → `LUMBAR`), segnale di miglioramento (da -3 a +3, tenendo conto delle negazioni: "non risponde bene alla terapia" non è un miglioramento) e frasi di evidenza. Il costo AI dipende da quante note vengono scritte, non da quante query vengono fatte.
+"Ultimo appuntamento saltato" significa: l'evento più recente del paziente fino alla data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta.
 
-2. **Query (real-time)**. La domanda viene tradotta in un piano strutturato (aree, finestra temporale, miglioramento richiesto, filtro no-show). Il piano lo produce l'LLM (output vincolato a JSON schema) e viene fuso con i marcatori espliciti del parser a regole: il modello capisce le parafrasi, il lessico evita che i termini espliciti vadano persi. Senza LLM lavora il solo parser a regole. Un piano non dipende dai dati, quindi viene calcolato una volta per domanda e salvato in `query_plans`. Poi il piano viene eseguito con normali query MongoDB indicizzate su `note_insights`, `eventi_calendario` e `pazienti`: nessuna analisi di testo a runtime. Una cache in memoria (60 s) assorbe le domande ripetute.
-
-"Ultimo appuntamento saltato" è definito così: l'evento più recente del paziente con data ≤ data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta come saltato.
-
-### Cosa succede se l'AI non funziona
-
-Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback deterministico basato su un lessico fisioterapico italiano con gestione delle negazioni. Le chiamate hanno timeout e un retry (Spring AI); esaurito quello, il fallback scatta per timeout, errori del provider o risposte non valide. Quando l'LLM torna disponibile, l'indexer ri-analizza (una volta sola) le note classificate col fallback.
-
-## Le domande della consegna, in breve
-
-- **Dove sono le informazioni?** Il dolore lombare e il miglioramento stanno nei testi liberi di `schede_valutazione` e `diario_trattamenti`; l'appuntamento saltato in `eventi_calendario`; nome e contatti in `pazienti`.
-- **Come estrarre "miglioramento" dai testi?** Ogni nota riceve un punteggio da -3 a +3 (dall'LLM o dal lessico) che viene salvato in `note_insights`. Per un paziente si sommano i punteggi delle sue note nel periodo: se la somma è positiva c'è miglioramento.
-- **Come identificare "dolore lombare"?** Ogni nota viene taggata con le aree anatomiche citate. Il lessico conosce i sinonimi (lombalgia, mal di schiena, low back pain, colpo della strega), l'LLM copre le formulazioni non previste.
-- **Come definire "ultimo appuntamento saltato"?** L'evento più recente del paziente fino alla data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta.
-- **Quale architettura permette risposte sotto i 2 secondi?** L'AI lavora prima, quando le note vengono indicizzate; la query fa solo letture su Mongo con indici. Una domanda nuova passa dall'LLM una volta sola e con un tempo massimo, poi il piano viene salvato.
-- **Come gestire i costi delle API?** Una chiamata per nota (una sola volta, anche se poi le query sono mille) e una per domanda distinta. Modello economico e un limite di chiamate al minuto per restare nella quota.
-- **Cosa succede se l'AI non funziona?** Timeout e un retry, poi il lessico prende il posto dell'LLM sia per le note sia per le domande: il sistema risponde comunque e nella risposta si vede quale componente ha lavorato. Quando l'AI torna, le note analizzate col lessico vengono rianalizzate.
-- **Come si aggiornano i dati?** Un job ogni 30 secondi indicizza le note nuove o modificate (confronto con l'hash del testo).
-- **Come vengono presentati i risultati?** Lista ordinata per punteggio di miglioramento; per ogni paziente l'ultimo appuntamento e gli estratti delle note che giustificano il risultato, più una spiegazione di come è nata la risposta e di chi è stato escluso e perché.
-
----
+Se l'LLM non risponde (timeout, errore, quota finita) il lessico prende il suo posto, sia per le note sia per le domande. Il sistema risponde comunque e nella risposta si vede quale componente ha lavorato.
 
 ## Trade-off principali
 
-- **Analisi AI al momento dell'indicizzazione, non della ricerca.** Ogni nota viene analizzata una volta e il risultato salvato; la query fa solo letture su Mongo. Il costo dipende dal numero di note e la latenza resta sotto i 100 ms. Lo svantaggio è che una nota appena scritta diventa cercabile al ciclo successivo dell'indexer (30 s), non subito.
-- **Limite di tempo sul planner, con fallback a regole.** L'LLM ha un tempo massimo per tradurre la domanda in un piano; se lo supera risponde il parser a regole e il piano dell'LLM viene salvato per la volta successiva. Così il tempo di risposta è sempre sotto controllo, ma la prima richiesta di una domanda nuova può essere interpretata in modo più grossolano (la risposta indica quale planner ha lavorato).
-- **Lessico clinico + LLM invece di embeddings.** Per la query target servono segnali di direzione (migliora / non migliora) e di area anatomica: un classificatore per nota li estrae in modo spiegabile e il lessico corregge le negazioni che i modelli piccoli sbagliano. La vector search avrebbe senso per domande aperte, che qui non ci sono.
+- **Analisi AI quando la nota viene indicizzata, non quando si cerca.** Il costo dipende dal numero di note e la query resta sotto i 100 ms. In cambio una nota appena scritta diventa cercabile al ciclo successivo (30 s), non subito.
+- **Limite di tempo sull'LLM.** Una domanda nuova aspetta l'LLM al massimo 1,5 s; oltre risponde il parser a regole e il piano dell'LLM viene salvato per la volta dopo. Il tempo di risposta è sempre sotto controllo, ma la prima risposta a una domanda nuova può essere più grossolana.
+- **Lessico + LLM invece di embedding.** Per questa query servono due segnali per nota (area e direzione del miglioramento): un classificatore li dà in modo spiegabile e il lessico corregge le negazioni che i modelli piccoli sbagliano. La ricerca vettoriale servirebbe per domande aperte, che qui non ci sono.
+
+## Modalità AI (opzionale)
+
+```bash
+# LLM locale con Ollama (nessuna chiave, scarica circa 1 GB di modello)
+docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
+
+# Google Gemini (chiave in .env, vedi .env.example)
+docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
+
+# qualunque endpoint compatibile OpenAI
+AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
+```
+
+Con l'LLM attivo le note vengono rianalizzate dal modello e le domande nuove interpretate dal modello; il lessico resta come controllo e come riserva. Con Gemini il vincolo dei 2 secondi regge con 100 utenti concorrenti (misure in [docs/DESIGN.md](docs/DESIGN.md)).
 
 ## Struttura del progetto
 
 ```
-├── docker-compose.yml          # MongoDB + seed dati + app + Mongo Express
-├── docker-compose.ai.yml       # overlay opzionale: LLM locale via Ollama
-├── docker-compose.gemini.yml   # overlay opzionale: LLM hosted via Gemini (chiave in .env)
-├── Dockerfile                  # build multi-stage (Gradle -> JRE)
-├── scripts/                    # smoke-test.sh (query target), load-test.py (latenza sotto carico)
-├── data/                       # dataset demo (marzo-dicembre 2024)
-├── ai_integration_homework_v2.md, USE_CASES_AND_TESTS.md   # consegna e casi d'uso forniti
-├── src/main/java/com/fisiodesk/smartquery/
-│   ├── analysis/               # lessico clinico, analizzatori, indexer batch
-│   ├── nlq/                    # domanda -> piano: planner LLM/regole, guardrail, budget, plan store
-│   ├── query/                  # esecuzione piano, cache, DTO
-│   ├── web/                    # REST controller + error handling
-│   └── domain/ repository/     # mapping collections MongoDB
-├── src/main/resources/static/  # web UI demo
-└── src/test/java/              # unit test (analizzatore, parser, esecuzione)
+├── docker-compose.yml          # MongoDB + dati di esempio + applicazione + Mongo Express
+├── docker-compose.ai.yml       # opzionale: LLM locale con Ollama
+├── docker-compose.gemini.yml   # opzionale: Gemini
+├── Dockerfile
+├── data/                       # dataset di esempio (marzo-dicembre 2024)
+├── docs/DESIGN.md              # scelte di progetto, configurazione, limiti, misure
+├── scripts/                    # smoke-test.sh (query target), load-test.py (carico)
+├── src/main/java/.../analysis  # lessico, analizzatori delle note, indexer
+├── src/main/java/.../nlq       # domanda -> filtro: LLM, parser a regole, controllo
+├── src/main/java/.../query     # esecuzione del filtro, cache, spiegazione
+├── src/main/java/.../web       # API REST
+├── src/main/resources/static   # interfaccia demo
+└── src/test/java               # test unitari
 ```
 
-## Configurazione
-
-| Variabile | Default | Significato |
-|---|---|---|
-| `MONGO_URI` | `mongodb://localhost:27017/fisiodesk` | connessione MongoDB (nel compose punta al container) |
-| `REFERENCE_DATE` | *(vuoto → ultimo evento in calendario)* | "oggi" per le finestre relative, `yyyy-MM-dd` |
-| `AI_ENABLED` | `false` | `true` per usare l'LLM (planner + analisi note) |
-| `AI_BASE_URL` | `https://api.openai.com` | endpoint OpenAI-compatibile, senza `/v1` (es. `http://ollama:11434`) |
-| `AI_COMPLETIONS_PATH` | `/v1/chat/completions` | path delle chat completions, per provider con prefisso diverso (Gemini: `/chat/completions` su `.../v1beta/openai`) |
-| `AI_API_KEY` | `not-needed` | chiave del provider (ignorata da Ollama) |
-| `AI_MODEL` | `gpt-4o-mini` | modello (es. `qwen2.5:1.5b` con Ollama, `gemini-3.5-flash-lite` con Gemini) |
-| `AI_ANALYSIS_MODEL` | *(vuoto → `AI_MODEL`)* | modello separato per l'analisi delle note, per non condividere la quota con il planner |
-| `AI_INDEXER_RPM` | `0` (nessun ritmo) | massimo di chiamate LLM al minuto dell'indexer, da tenere sotto la quota del provider |
-| `GEMINI_API_KEY` | – | chiave Gemini, letta da `.env` dall'overlay `docker-compose.gemini.yml` |
-| `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
-| `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` negli overlay AI) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
-
-## Troubleshooting
-
-- **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
-- **Mongo Express** (http://localhost:8081) è senza password ma ascolta solo su `127.0.0.1`: serve per guardare i dati durante la review, non per altro.
-- **Ripartire da zero**: `docker compose down -v && docker compose up -d --build` (dati demo re-importati e ri-indicizzati automaticamente).
-- **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
-- **Modalità AI locale lenta al primo avvio**: il download del modello è visibile con `docker logs fisiodesk-ollama-pull`; la prima analisi delle note su CPU richiede qualche minuto (`/api/stats` mostra `analyzedByLlm` crescere), nel frattempo le query rispondono con le analisi deterministiche.
-
-## Sviluppo locale
-
-```bash
-# solo il database
-docker compose up -d mongodb mongodb-seed
-
-# applicazione in locale
-./gradlew bootRun
-
-# test
-./gradlew test
-```
+I file `ai_integration_homework_v2.md` e `USE_CASES_AND_TESTS.md` sono la consegna e i casi d'uso forniti con il dataset.
 
 ## API
 
-`POST /api/query`
+- `POST /api/query` con `{"question": "...", "referenceDate": "2024-12-31", "professionistaId": "..."}` (gli ultimi due opzionali; con `professionistaId` si vedono solo i pazienti di quel professionista). Risponde con il filtro interpretato, i pazienti con le loro note, e la spiegazione.
+- `GET /api/stats` note indicizzate e analizzatore in uso.
+- `GET /api/professionisti` professionisti presenti nei dati.
+- `DELETE /api/cache` svuota cache e filtri salvati, per far ripassare una domanda dall'AI.
 
-```json
-{ "question": "…", "referenceDate": "2024-12-31", "professionistaId": "507f1f77bcf86cd799439021" }
+## Sviluppo e test
+
+```bash
+./gradlew test                       # test unitari
+scripts/smoke-test.sh                # query target sul sistema in esecuzione
+scripts/load-test.py load 60 5       # 60 utenti concorrenti
 ```
 
-Risposta: il piano interpretato (come è stata capita la domanda), i risultati ordinati per punteggio di miglioramento con le evidenze per nota, i metadati (latenza, cache, data di riferimento) e un blocco `explain`. `referenceDate` e `professionistaId` sono opzionali.
-
-**Spiegazione del risultato (`explain`).** Ogni risposta include come è stata prodotta, ricavato da quello che la pipeline ha fatto davvero e senza chiamate AI in più: origine del piano (AI in questa richiesta, piano memorizzato, parser a regole per timeout/AI assente), parole della domanda riconosciute dal lessico e come sono state lette (`"dolore lombare" → LUMBAR`), tempi per tappa (interpretazione, ricerca note, valutazione pazienti, totale) con i conteggi (note nella finestra, note sull'area, pazienti coinvolti), da dove viene la data di riferimento, e **ogni paziente con note nel periodo che è stato escluso, con il motivo** ("nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)", "ultimo appuntamento completato il 20/12/2024, non saltato", "nessuna nota sull'area richiesta"). La UI lo apre in un popup dal link "Come è nato il risultato" accanto al conteggio, ed evidenzia nelle note i termini che hanno pesato. Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
-
-`DELETE /api/cache` svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non vengono toccate. È un endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
-
-**Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriverebbe dal token dell'utente autenticato; qui è nel body per la demo e la UI ha un selettore.
-
-`GET /api/professionisti` restituisce i professionisti presenti nei dati (per il selettore della UI). `GET /api/stats` restituisce il numero di note indicizzate e l'analizzatore usato. `GET /actuator/health` è l'healthcheck.
-
-## Riferimenti
-
-- [Spring AI 1.1 - OpenAI chat e structured outputs](https://docs.spring.io/spring-ai/reference/1.1/api/chat/openai-chat.html), [ChatClient](https://docs.spring.io/spring-ai/reference/1.1/api/chatclient.html)
-- [Spring AI 2.0 richiede Spring Boot 4](https://www.herodevs.com/blog-posts/spring-ai-2-0-is-coming-soon-your-boot-4-0-migration-does-not-have-to-start-tomorrow)
-- [Ollama, structured outputs](https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html)
-- [Immagine Docker di MongoDB](https://hub.docker.com/_/mongo)
+Per le scelte di progetto, la configurazione, i limiti noti e le misure di carico: [docs/DESIGN.md](docs/DESIGN.md).
