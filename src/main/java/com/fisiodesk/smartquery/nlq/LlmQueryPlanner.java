@@ -39,7 +39,10 @@ public class LlmQueryPlanner implements QueryPlanner {
              "windowMonths":2,"missedLastAppointment":false}
             "Chi ha saltato l'ultimo appuntamento?" ->
             {"bodyAreas":[],"requireImprovement":false,"requireWorsening":false,
-             "windowMonths":3,"missedLastAppointment":true}
+             "windowMonths":3,"missedLastAppointment":true,"attendedLastAppointment":false}
+            "Pazienti con lombalgia migliorati che non hanno saltato l'ultimo appuntamento" ->
+            {"bodyAreas":["LUMBAR"],"requireImprovement":true,"requireWorsening":false,
+             "windowMonths":3,"missedLastAppointment":false,"attendedLastAppointment":true}
             """;
 
     /** Descriptions end up in the JSON schema. */
@@ -53,7 +56,9 @@ public class LlmQueryPlanner implements QueryPlanner {
             @JsonPropertyDescription("Finestra temporale in mesi citata nella domanda, 3 se assente")
             int windowMonths,
             @JsonPropertyDescription("true se si chiede chi ha saltato l'ultimo appuntamento")
-            boolean missedLastAppointment) {
+            boolean missedLastAppointment,
+            @JsonPropertyDescription("true se si chiede il contrario, cioe chi NON ha saltato l'ultimo appuntamento")
+            boolean attendedLastAppointment) {
     }
 
     private final ChatClient chatClient;
@@ -87,7 +92,8 @@ public class LlmQueryPlanner implements QueryPlanner {
         }
         int window = extraction.windowMonths() <= 0
                 ? QueryPlan.DEFAULT_WINDOW_MONTHS : Math.min(24, extraction.windowMonths());
+        boolean attended = extraction.attendedLastAppointment();
         return new QueryPlan(areas, extraction.requireImprovement(), extraction.requireWorsening(),
-                window, extraction.missedLastAppointment(), NAME);
+                window, extraction.missedLastAppointment() && !attended, attended, NAME);
     }
 }

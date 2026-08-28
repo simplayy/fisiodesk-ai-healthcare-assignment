@@ -31,7 +31,14 @@ public class StoredQueryPlan {
     @Field("missed_last_appointment")
     private boolean missedLastAppointment;
 
+    @Field("attended_last_appointment")
+    private boolean attendedLastAppointment;
+
     private String planner;
+
+    /** Version of the interpretation logic that produced this plan. */
+    @Field("planner_version")
+    private int plannerVersion;
 
     @Field("created_at")
     private Instant createdAt;
@@ -64,8 +71,16 @@ public class StoredQueryPlan {
         return missedLastAppointment;
     }
 
+    public boolean isAttendedLastAppointment() {
+        return attendedLastAppointment;
+    }
+
     public String getPlanner() {
         return planner;
+    }
+
+    public int getPlannerVersion() {
+        return plannerVersion;
     }
 
     public Instant getCreatedAt() {
@@ -100,8 +115,16 @@ public class StoredQueryPlan {
         this.missedLastAppointment = missedLastAppointment;
     }
 
+    public void setAttendedLastAppointment(boolean attendedLastAppointment) {
+        this.attendedLastAppointment = attendedLastAppointment;
+    }
+
     public void setPlanner(String planner) {
         this.planner = planner;
+    }
+
+    public void setPlannerVersion(int plannerVersion) {
+        this.plannerVersion = plannerVersion;
     }
 
     public void setCreatedAt(Instant createdAt) {

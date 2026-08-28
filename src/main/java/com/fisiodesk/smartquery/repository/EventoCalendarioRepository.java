@@ -12,6 +12,10 @@ public interface EventoCalendarioRepository extends MongoRepository<EventoCalend
     Optional<EventoCalendario> findFirstByPazienteIdAndDataLessThanEqualOrderByDataDesc(
             ObjectId pazienteId, Instant reference);
 
+    /** Same, restricted to one professional: with scoping, a colleague's appointment is not "the last one". */
+    Optional<EventoCalendario> findFirstByPazienteIdAndProfessionistaIdAndDataLessThanEqualOrderByDataDesc(
+            ObjectId pazienteId, ObjectId professionistaId, Instant reference);
+
     /** Most recent event overall, used as the default reference date for the demo dataset. */
     Optional<EventoCalendario> findFirstByOrderByDataDesc();
 }

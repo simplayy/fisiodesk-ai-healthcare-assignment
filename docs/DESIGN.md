@@ -81,8 +81,9 @@ Indici su `data`, `(paziente_id, data)` e `(professionista_id, data)`, più `(pa
 ## Le regole con cui decide
 
 - **Parte del corpo**: una nota conta solo se parla dell'area richiesta, e il miglioramento si somma solo su quelle note. Chi migliora della cervicale non passa una ricerca sulla lombalgia.
-- **Miglioramento nel periodo**: somma dei punteggi delle note in finestra maggiore di zero.
+- **Miglioramento nel periodo**: somma dei punteggi delle note in finestra maggiore di zero, **e** nota più recente non negativa. Senza la seconda condizione un paziente migliorato a ottobre e peggiorato a dicembre risulterebbe "in miglioramento".
 - **Ultimo appuntamento saltato**: l'appuntamento più recente fino alla data di riferimento ha stato `no_show`. Se è `cancellato` non conta, il paziente ha avvisato. Se è `prenotato` con data già passata non conta: è un dato rimasto indietro, non una prova di assenza.
+- **Ultimo appuntamento non saltato**: è un filtro a sé, non l'assenza del precedente. "Che non hanno saltato l'ultimo appuntamento" chiede l'opposto, e il piano ha un campo apposta; senza, la negazione verrebbe letta come conferma.
 
 ## Il dizionario di termini
 
@@ -100,7 +101,7 @@ Ogni nota porta l'id di chi l'ha scritta. Se la richiesta indica un professionis
 
 Nel prodotto vero l'id arriverebbe da chi ha fatto il login. Qui è nella richiesta per poterlo mostrare nella demo.
 
-Da notare: il filtro vale sulle note, non sul calendario. L'ultimo appuntamento è l'ultimo in assoluto del paziente, anche se preso con un altro professionista. Sui dati di esempio non si vede perché ogni paziente ne ha uno solo.
+Il filtro vale anche sul calendario: con lo scope attivo "l'ultimo appuntamento" è l'ultimo preso con quel professionista, non quello di un collega.
 
 ## La spiegazione allegata a ogni risposta
 
@@ -154,9 +155,8 @@ Se l'AI supera il tempo massimo risponde il parser a regole. Due domande: succed
 | "Pazienti con gonalgia recuperati..." | non conosce "gonalgia" | non filtra per ginocchio, risposta più larga |
 | "Chi ha la cervicalgia e sta peggio..." | cerca "peggior", non riconosce "sta peggio" | non filtra i peggiorati, risposta più larga |
 | "...non si fa più vedere" | non conosce la perifrasi | non filtra gli appuntamenti saltati, risposta più larga |
-| "...che non hanno fatto progressi" | cerca la negazione solo su "miglior", qui c'è "progressi" | legge il contrario: restituisce i migliorati |
 
-Tre casi su quattro danno una risposta più larga del dovuto, che è l'errore meno grave. Uno dà la risposta opposta. In tutti i casi la risposta dichiara che l'ha interpretata il parser a regole, e dalla seconda volta la domanda usa il filtro dell'AI, che intanto è stato salvato.
+Le differenze rimaste danno tutte una risposta **più larga** del dovuto: il parser non riconosce una parola e quindi non filtra. Nessuna dà la risposta opposta. Una che la dava, "che non hanno fatto progressi", la riconosceva come richiesta di migliorati: adesso la negazione è cercata su tutte le radici positive, non solo su "miglior". In ogni caso la risposta dichiara che l'ha interpretata il parser a regole, e dalla seconda volta la domanda usa il filtro dell'AI, che intanto è stato salvato.
 
 ## Le scelte discutibili
 
@@ -170,10 +170,9 @@ Tre casi su quattro danno una risposta più larga del dovuto, che è l'errore me
 - **Le note cancellate restano.** Se una nota viene eliminata dal gestionale, la sua analisi resta. Servirebbe una pulizia periodica.
 - **Domande che non capisce.** Se non riconosce né area, né andamento, né filtro sugli appuntamenti ("ciao"), restituisce tutti i pazienti del periodo invece di dire che non ha capito. E non gestisce la negazione sugli appuntamenti: "che non hanno saltato" viene letto come "che hanno saltato".
 - **Modello locale e tempo massimo.** Senza scheda grafica una domanda nuova sfora quasi sempre: risponde il parser a regole e il filtro dell'AI serve dalla volta dopo. In locale l'AI dà il suo valore sulle note, non sull'interpretazione immediata.
-- **Il dizionario prende alcune frasi fuori contesto.** Cerca "non risponde" e quindi conta come peggioramento anche "non risponde al telefono". Legge "collo del femore" come zona cervicale e "parte alta della schiena" come lombare. Sui dati di esempio non capita, ma su note vere sì, e siccome il dizionario ha la precedenza sull'AI quando i due discordano, può ribaltare una lettura corretta.
-- **Il punteggio è una somma e ignora l'ordine.** "Peggiorato a novembre, ora nettamente migliorato" e la frase opposta ricevono lo stesso punteggio. Allo stesso modo una nota molto negativa di tre mesi fa annulla un miglioramento recente. Servirebbe pesare le note più recenti.
-- **Nessun filtro sullo stato del paziente.** Un paziente `sospeso` o `archiviato` compare come gli altri: nei dati di esempio Francesca Ricci è sospesa. L'API restituisce lo stato, l'interfaccia non lo mostra.
-- **I filtri delle domande non scadono.** Se l'AI interpreta male una domanda, quella lettura resta salvata e viene riusata finché non si svuota la cache con `DELETE /api/cache`.
+- **Il dizionario resta una lista di termini.** Le trappole note sono gestite: "non risponde" conta solo con il suo oggetto ("alla terapia", "al trattamento") e non su "non risponde al telefono"; "collo del femore" viene letto come anca e "parte alta della schiena" non come lombare. Ma è una lista, quindi una frase ambigua non prevista può ancora essere letta male, e siccome il dizionario ha la precedenza sull'AI sui marcatori espliciti, può ribaltare una lettura corretta.
+- **Il punteggio pesa poco la cronologia.** La condizione sulla nota più recente evita di dichiarare "migliorato" chi sta peggiorando adesso, ma per il resto è una somma: due note tiepide valgono quanto un miglioramento netto. Servirebbe un peso decrescente sulle note più vecchie.
+- **Lo stato del paziente è mostrato, non filtrato.** Un paziente `sospeso` o `archiviato` compare nei risultati, con l'etichetta del suo stato accanto al nome. Se debba essere escluso è una decisione di prodotto, non tecnica.
 
 ## Cosa farei dopo
 

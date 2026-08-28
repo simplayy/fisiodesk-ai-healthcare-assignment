@@ -23,10 +23,12 @@ public final class PlanGuardrail {
 
         boolean worsening = llm.requireWorsening() || rules.requireWorsening();
         boolean improvement = !worsening && (llm.requireImprovement() || rules.requireImprovement());
-        boolean missedLast = llm.missedLastAppointment() || rules.missedLastAppointment();
+        // An explicit "non hanno saltato" wins: it is the opposite filter, not the same one.
+        boolean attendedLast = llm.attendedLastAppointment() || rules.attendedLastAppointment();
+        boolean missedLast = !attendedLast && (llm.missedLastAppointment() || rules.missedLastAppointment());
 
         int window = explicitWindow ? rules.windowMonths() : llm.windowMonths();
 
-        return new QueryPlan(areas, improvement, worsening, window, missedLast, llm.planner());
+        return new QueryPlan(areas, improvement, worsening, window, missedLast, attendedLast, llm.planner());
     }
 }

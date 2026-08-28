@@ -34,10 +34,16 @@ public final class ClinicalLexicon {
             "senza dolore", "nessun dolore", "non ha piu dolore", "senza limitazioni",
             "senza difficolta", "senza problemi");
 
-    /** Phrases that negate an improvement even though they contain a positive stem. */
+    /**
+     * Phrases that negate an improvement even though they contain a positive stem.
+     * "non risponde" carries its object: on its own it also matches "non risponde
+     * al telefono", which says nothing about how the therapy is going.
+     */
     public static final List<String> NEGATED_IMPROVEMENT_PHRASES = List.of(
             "non migliora", "nessun miglioramento", "senza miglioramento",
-            "non risponde", "mancato miglioramento", "non recupera");
+            "non risponde bene", "non risponde alla terap", "non risponde al trattamento",
+            "non risponde alle terap", "non risponde alle cure",
+            "mancato miglioramento", "non recupera");
 
     public static final List<String> POSITIVE_TERMS = List.of(
             "miglior", "progress", "recuper", "risoluz", "risolt", "guarit",
@@ -53,6 +59,32 @@ public final class ClinicalLexicon {
     /** Words that flip the meaning of a positive term appearing shortly after them. */
     public static final List<String> NEGATION_MARKERS = List.of(
             "non ", "nessun", "senza ", "scarso ", "scarsa ", "assenza di", "mancato ");
+
+    /**
+     * Phrases that contain the term of another area: "collo del femore" is a hip,
+     * not a neck, and the upper back is not the lower back. Rewritten before
+     * matching, so each lands on the right area or on none when the taxonomy has
+     * no value for it (the thoracic spine).
+     */
+    private static final Map<String, String> AMBIGUOUS_PHRASES = new LinkedHashMap<>() {{
+        put("collo del femore", "anca");
+        put("collo dell'omero", "spalla");
+        put("collo dell omero", "spalla");
+        put("collo del piede", "caviglia");
+        put("parte alta della schiena", "dorso");
+        put("schiena alta", "dorso");
+        put("zona dorsale", "dorso");
+        put("colonna dorsale", "dorso");
+    }};
+
+    /** Applies the rewrites above; call before matching body areas. */
+    public static String disambiguate(String normalizedText) {
+        String text = normalizedText;
+        for (Map.Entry<String, String> entry : AMBIGUOUS_PHRASES.entrySet()) {
+            text = text.replace(entry.getKey(), entry.getValue());
+        }
+        return text;
+    }
 
     /** Term at the start of a word: "anca" must not match "stanca". */
     public static boolean containsTerm(String normalizedText, String term) {

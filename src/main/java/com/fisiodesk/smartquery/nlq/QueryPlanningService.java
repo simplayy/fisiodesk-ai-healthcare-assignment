@@ -38,6 +38,13 @@ public class QueryPlanningService {
 
     private static final Logger log = LoggerFactory.getLogger(QueryPlanningService.class);
 
+    /**
+     * Bumped whenever the interpretation changes (prompt, rules, plan fields).
+     * Plans stored by an older version are ignored and computed again, so a fix
+     * to the planner is not defeated by the plans it produced before.
+     */
+    private static final int PLANNER_VERSION = 2;
+
     private final LlmQueryPlanner llmPlanner;
     private final HeuristicQueryPlanner heuristicPlanner;
     private final AiProperties aiProperties;
@@ -155,7 +162,9 @@ public class QueryPlanningService {
 
     private Optional<QueryPlan> findStored(String key) {
         try {
-            return planRepository.findById(key).map(this::toPlan);
+            return planRepository.findById(key)
+                    .filter(stored -> stored.getPlannerVersion() == PLANNER_VERSION)
+                    .map(this::toPlan);
         } catch (RuntimeException e) {
             log.warn("Plan store unavailable: {}", e.getMessage());
             return Optional.empty();
@@ -172,7 +181,9 @@ public class QueryPlanningService {
             stored.setRequireWorsening(plan.requireWorsening());
             stored.setWindowMonths(plan.windowMonths());
             stored.setMissedLastAppointment(plan.missedLastAppointment());
+            stored.setAttendedLastAppointment(plan.attendedLastAppointment());
             stored.setPlanner(plan.planner());
+            stored.setPlannerVersion(PLANNER_VERSION);
             stored.setCreatedAt(Instant.now());
             planRepository.save(stored);
         } catch (RuntimeException e) {
@@ -186,7 +197,8 @@ public class QueryPlanningService {
             stored.getBodyAreas().forEach(name -> areas.add(BodyArea.valueOf(name)));
         }
         return new QueryPlan(areas, stored.isRequireImprovement(), stored.isRequireWorsening(),
-                stored.getWindowMonths(), stored.isMissedLastAppointment(), stored.getPlanner());
+                stored.getWindowMonths(), stored.isMissedLastAppointment(),
+                stored.isAttendedLastAppointment(), stored.getPlanner());
     }
 
     /** Questions are keyed by a hash of their normalized text. */

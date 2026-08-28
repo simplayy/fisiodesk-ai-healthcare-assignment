@@ -16,6 +16,7 @@ public final class QueryDtos {
             boolean requireWorsening,
             int windowMonths,
             boolean missedLastAppointment,
+            boolean attendedLastAppointment,
             String planner,
             Instant from,
             Instant to) {

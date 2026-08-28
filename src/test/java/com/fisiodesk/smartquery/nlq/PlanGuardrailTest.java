@@ -62,6 +62,17 @@ class PlanGuardrailTest {
     }
 
     @Test
+    void anExplicitNegatedNoShowWinsOverTheModel() {
+        QueryPlan llm = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, true, false, "llm");
+        QueryPlan rules = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, true, "heuristic");
+
+        QueryPlan merged = PlanGuardrail.merge(llm, rules, false);
+
+        assertThat(merged.attendedLastAppointment()).isTrue();
+        assertThat(merged.missedLastAppointment()).isFalse();
+    }
+
+    @Test
     void worseningWinsOverImprovement() {
         QueryPlan llm = plan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "llm");
         QueryPlan rules = plan(EnumSet.of(BodyArea.LUMBAR), false, true, 3, false, "heuristic");

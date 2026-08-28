@@ -86,6 +86,24 @@ class HeuristicClinicalTextAnalyzerTest {
     }
 
     @Test
+    void unansweredPhoneCallIsNotAClinicalWorsening() {
+        // "non risponde" alone used to count as a worsening.
+        assertThat(analyzer.analyze("La paziente non risponde al telefono per fissare la seduta.")
+                .improvementScore()).isZero();
+        assertThat(analyzer.analyze("Il paziente non risponde alla terapia manuale.")
+                .improvementScore()).isNegative();
+    }
+
+    @Test
+    void anatomicalPhrasesAreNotReadLiterally() {
+        // "collo del femore" is a hip, the upper back is not the lower back.
+        assertThat(analyzer.analyze("Frattura del collo del femore, riabilitazione in corso.").bodyAreas())
+                .containsExactly(BodyArea.HIP);
+        assertThat(analyzer.analyze("Dolore alla parte alta della schiena.").bodyAreas())
+                .doesNotContain(BodyArea.LUMBAR);
+    }
+
+    @Test
     void neutralFirstAssessmentHasNoSignal() {
         ClinicalNoteAnalysis analysis = analyzer.analyze(
                 "Prima valutazione: paziente lamenta forte dolore alla bassa schiena "

@@ -22,6 +22,8 @@ Non c'è un campo diagnosi, quindi ogni nota viene etichettata con le aree di cu
 
 L'evento più recente del paziente fino alla data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` non conta, il paziente ha avvisato. Un `prenotato` con data passata nemmeno, è un dato sporco.
 
+La domanda opposta ("che **non** hanno saltato l'ultimo appuntamento") è un filtro a sé, con un campo suo nel piano: altrimenti la negazione verrebbe letta come conferma e la risposta sarebbe esattamente il contrario di quella chiesta.
+
 **Quale architettura permette risposte <2 secondi?**
 
 Quella in cui l'AI non sta nel percorso della ricerca. Legge le note prima, in un job che gira ogni 30 secondi, e salva il risultato. La ricerca fa solo letture MongoDB su indici. L'unica eccezione è una domanda mai vista, che ha un tetto di 1,5 secondi oltre il quale risponde il parser a regole.
@@ -34,7 +36,7 @@ Una chiamata per nota, e mai più se il testo non cambia (confronto per hash). U
 
 Prende il suo posto il dizionario, sia sulle note sia sulle domande, e il sistema continua a rispondere. Le note lette col dizionario vengono rilette una volta quando l'AI torna. Ogni risposta dice quale dei due ha lavorato.
 
-Quanto costa in precisione l'ho misurato: sulle 28 domande già interpretate dall'AI, il parser a regole produce lo stesso filtro in 24 casi. Negli altri 4 la risposta è più larga del dovuto, e in un caso ("non hanno fatto progressi") è opposta. Il dettaglio è in [DESIGN.md](DESIGN.md#quando-scatta-il-fallback-e-quanto-cambia-la-risposta).
+Quanto costa in precisione l'ho misurato: sulle 28 domande già interpretate dall'AI, il parser a regole produce lo stesso filtro in 24 casi. Negli altri la risposta è più larga del dovuto, mai opposta. Il dettaglio è in [DESIGN.md](DESIGN.md#quando-scatta-il-fallback-e-quanto-cambia-la-risposta).
 
 ## 2. Progettazione della Soluzione
 

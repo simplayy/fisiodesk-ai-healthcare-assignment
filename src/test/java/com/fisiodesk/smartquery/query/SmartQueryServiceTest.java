@@ -130,6 +130,32 @@ class SmartQueryServiceTest {
     }
 
     @Test
+    void attendedFilterReturnsOnlyPatientsWhoShowedUp() {
+        QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, true, "test");
+
+        List<PatientResult> results = service.run(plan, REFERENCE, null).results();
+
+        assertThat(results).extracting(PatientResult::cognome).containsExactly("Neri");
+    }
+
+    @Test
+    void aPatientWorseAtTheLastNoteIsNotImproving() {
+        // Positive sum, but the most recent note says the patient got worse.
+        ObjectId mixed = new ObjectId();
+        when(insightRepository.findByDataGreaterThanEqualAndDataLessThanEqual(any(), any())).thenReturn(List.of(
+                insight(mixed, "2024-10-01", Set.of("LUMBAR"), 3),
+                insight(mixed, "2024-12-20", Set.of("LUMBAR"), -1)));
+        when(pazienteRepository.findAllById(anyCollection())).thenReturn(List.of(patient(mixed, "Luca", "Gialli")));
+        QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, false, "test");
+
+        SmartQueryService.Execution execution = service.run(plan, REFERENCE, null);
+
+        assertThat(execution.results()).isEmpty();
+        assertThat(execution.trace().excluded()).extracting(SmartQueryService.Exclusion::reason)
+                .anyMatch(reason -> reason.contains("segnala un peggioramento"));
+    }
+
+    @Test
     void traceExplainsEveryExclusion() {
         QueryPlan plan = new QueryPlan(EnumSet.of(BodyArea.LUMBAR), true, false, 3, true, "test");
 

@@ -30,7 +30,8 @@
   var FIELD_LABELS = {
     requireImprovement: "con miglioramento",
     requireWorsening: "senza miglioramento / peggiorati",
-    missedLastAppointment: "ultimo appuntamento saltato"
+    missedLastAppointment: "ultimo appuntamento saltato",
+    attendedLastAppointment: "ultimo appuntamento non saltato"
   };
 
   function fmtDate(iso) {
@@ -59,6 +60,7 @@
     if (plan.requireWorsening) parts.push("senza miglioramento");
     parts.push("ultimi " + plan.windowMonths + " mesi");
     if (plan.missedLastAppointment) parts.push("ultimo appuntamento saltato");
+    if (plan.attendedLastAppointment) parts.push("ultimo appuntamento non saltato");
     return parts;
   }
 
@@ -114,6 +116,8 @@
         [p.eta != null ? p.eta + " anni" : null, p.telefono, p.email].filter(Boolean).join(" · ")));
       head.appendChild(left);
       var badges = el("div", "badges");
+      /* A suspended or archived patient must not look like an active one. */
+      if (p.stato && p.stato !== "attivo") badges.appendChild(el("span", "badge noshow", "Paziente " + p.stato));
       badges.appendChild(trendBadge(p.improvementScore));
       if (p.lastAppointment) {
         badges.appendChild(p.lastAppointment.stato === "no_show"

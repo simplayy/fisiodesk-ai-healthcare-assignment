@@ -149,6 +149,7 @@ public class QueryFacade {
                 plan.requireWorsening(),
                 plan.windowMonths(),
                 plan.missedLastAppointment(),
+                plan.attendedLastAppointment(),
                 plan.planner(),
                 from,
                 referenceDate);

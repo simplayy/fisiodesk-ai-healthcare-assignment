@@ -25,9 +25,17 @@ public class HeuristicQueryPlanner implements QueryPlanner {
     private static final Pattern WINDOW_SINGLE_PATTERN =
             Pattern.compile("ultimo\\s+mese");
 
-    /** "non migliora", "non mostrano miglioramento", "nessun segno di miglioramento": up to three words in between. */
+    /**
+     * "non migliora", "non hanno fatto progressi", "nessun segno di recupero":
+     * up to three words in between, over the same stems the lexicon reads as
+     * positive, otherwise a negation on one of them would be missed.
+     */
     private static final Pattern NEGATED_IMPROVEMENT_PATTERN =
-            Pattern.compile("(non|senza|nessun\\w*)\\s+(\\w+\\s+){0,3}miglior");
+            Pattern.compile("(non|senza|nessun\\w*)\\s+(\\w+\\s+){0,3}(miglior|progress|recuper|guarit)");
+
+    /** "che non hanno saltato l'ultimo appuntamento": the opposite filter, not the same one. */
+    private static final Pattern NEGATED_MISSED_PATTERN =
+            Pattern.compile("(non|senza|nessun\\w*)\\s+(\\w+\\s+){0,3}(saltat|mancat|no.show)");
 
     private record Analysis(QueryPlan plan, List<PlanClue> clues) {
     }
@@ -46,10 +54,11 @@ public class HeuristicQueryPlanner implements QueryPlanner {
         String q = ClinicalLexicon.normalize(question);
         List<PlanClue> clues = new ArrayList<>();
 
+        String forAreas = ClinicalLexicon.disambiguate(q);
         Set<BodyArea> areas = EnumSet.noneOf(BodyArea.class);
         ClinicalLexicon.BODY_AREA_TERMS.forEach((area, terms) -> {
             for (String term : terms) {
-                if (ClinicalLexicon.containsTerm(q, term)) {
+                if (ClinicalLexicon.containsTerm(forAreas, term)) {
                     areas.add(area);
                     clues.add(new PlanClue("bodyAreas", snippet(q, term), area.name()));
                     break;
@@ -78,13 +87,29 @@ public class HeuristicQueryPlanner implements QueryPlanner {
             }
         }
 
-        String missedTerm = firstMatch(q,
-                "saltato", "saltata", "no show", "no-show", "no_show",
-                "non si e presentato", "non si sono presentati", "non presentato",
-                "mancato appuntamento", "assente all'ultimo", "assenti all'ultimo");
-        boolean missedLast = missedTerm != null;
-        if (missedLast) {
-            clues.add(new PlanClue("missedLastAppointment", snippet(q, missedTerm), "true"));
+        // Check the negation first: "non hanno saltato" contains "saltato".
+        Matcher negatedMissed = NEGATED_MISSED_PATTERN.matcher(q);
+        boolean attendedLast = false;
+        boolean missedLast = false;
+        if (negatedMissed.find()) {
+            attendedLast = true;
+            clues.add(new PlanClue("attendedLastAppointment", snippet(q, negatedMissed.group()), "true"));
+        } else {
+            String attendedTerm = firstMatch(q, "si sono presentati", "si e presentato", "si e presentata",
+                    "hanno rispettato l'appuntamento", "sono venuti all'ultimo");
+            if (attendedTerm != null) {
+                attendedLast = true;
+                clues.add(new PlanClue("attendedLastAppointment", snippet(q, attendedTerm), "true"));
+            } else {
+                String missedTerm = firstMatch(q,
+                        "saltato", "saltata", "no show", "no-show", "no_show",
+                        "non si e presentato", "non si sono presentati", "non presentato",
+                        "mancato appuntamento", "assente all'ultimo", "assenti all'ultimo");
+                missedLast = missedTerm != null;
+                if (missedLast) {
+                    clues.add(new PlanClue("missedLastAppointment", snippet(q, missedTerm), "true"));
+                }
+            }
         }
 
         int window = QueryPlan.DEFAULT_WINDOW_MONTHS;
@@ -100,7 +125,7 @@ public class HeuristicQueryPlanner implements QueryPlanner {
             }
         }
 
-        return new Analysis(new QueryPlan(areas, improvement, worsening, window, missedLast, NAME), clues);
+        return new Analysis(new QueryPlan(areas, improvement, worsening, window, missedLast, attendedLast, NAME), clues);
     }
 
     /** The matched term with the word it belongs to ("lombar" -> "lombare"). */

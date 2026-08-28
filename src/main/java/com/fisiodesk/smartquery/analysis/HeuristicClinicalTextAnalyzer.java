@@ -21,13 +21,14 @@ public class HeuristicClinicalTextAnalyzer implements ClinicalTextAnalyzer {
     @Override
     public ClinicalNoteAnalysis analyze(String text) {
         String normalized = ClinicalLexicon.normalize(text);
+        String forAreas = ClinicalLexicon.disambiguate(normalized);
 
         Set<BodyArea> areas = EnumSet.noneOf(BodyArea.class);
         List<String> evidence = new ArrayList<>();
 
         ClinicalLexicon.BODY_AREA_TERMS.forEach((area, terms) -> {
             for (String term : terms) {
-                if (ClinicalLexicon.containsTerm(normalized, term)) {
+                if (ClinicalLexicon.containsTerm(forAreas, term)) {
                     areas.add(area);
                     evidence.add("area:" + term.strip());
                     break;

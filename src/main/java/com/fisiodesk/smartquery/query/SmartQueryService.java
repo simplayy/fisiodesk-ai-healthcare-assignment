@@ -85,7 +85,7 @@ public class SmartQueryService {
         List<Exclusion> excluded = new ArrayList<>();
         List<PatientResult> results = new ArrayList<>();
         for (Map.Entry<ObjectId, List<NoteInsight>> entry : byPatient.entrySet()) {
-            Outcome outcome = evaluate(entry.getKey(), entry.getValue(), plan, referenceDate, patients);
+            Outcome outcome = evaluate(entry.getKey(), entry.getValue(), plan, referenceDate, patients, professionistaId);
             if (outcome.result() != null) {
                 results.add(outcome.result());
             } else {
@@ -134,7 +134,8 @@ public class SmartQueryService {
                              List<NoteInsight> insights,
                              QueryPlan plan,
                              Instant referenceDate,
-                             Map<String, Paziente> patients) {
+                             Map<String, Paziente> patients,
+                             ObjectId professionistaId) {
         // Trend computed only on the notes of the requested area.
         int totalScore = insights.stream().mapToInt(NoteInsight::getImprovementScore).sum();
 
@@ -142,20 +143,35 @@ public class SmartQueryService {
             return Outcome.dropped("nessun miglioramento nell'area richiesta (punteggio " + signed(totalScore)
                     + " su " + insights.size() + " note)");
         }
+        // The sum alone would call "improving" a patient who got better months ago and is
+        // worse now: the most recent note must not contradict the trend.
+        NoteInsight latest = insights.stream().max(Comparator.comparing(NoteInsight::getData)).orElseThrow();
+        if (plan.requireImprovement() && latest.getImprovementScore() < 0) {
+            return Outcome.dropped("l'ultima nota sull'area, del " + DAY.format(latest.getData())
+                    + ", segnala un peggioramento (punteggio complessivo " + signed(totalScore) + ")");
+        }
         // "non migliora" includes patients with no clear signal, not only those getting worse.
         if (plan.requireWorsening() && totalScore > 0) {
             return Outcome.dropped("in miglioramento nell'area richiesta (punteggio " + signed(totalScore)
                     + " su " + insights.size() + " note)");
         }
 
-        Optional<EventoCalendario> lastEvent = eventoRepository
-                .findFirstByPazienteIdAndDataLessThanEqualOrderByDataDesc(pazienteId, referenceDate);
+        // With scoping, "the last appointment" is the last one with this professional.
+        Optional<EventoCalendario> lastEvent = professionistaId == null
+                ? eventoRepository.findFirstByPazienteIdAndDataLessThanEqualOrderByDataDesc(pazienteId, referenceDate)
+                : eventoRepository.findFirstByPazienteIdAndProfessionistaIdAndDataLessThanEqualOrderByDataDesc(
+                        pazienteId, professionistaId, referenceDate);
         boolean missedLast = lastEvent
                 .map(event -> EventoCalendario.STATO_NO_SHOW.equals(event.getStato()))
                 .orElse(false);
         if (plan.missedLastAppointment() && !missedLast) {
             return Outcome.dropped(lastEvent
                     .map(event -> "ultimo appuntamento " + event.getStato() + " il " + DAY.format(event.getData()) + ", non saltato")
+                    .orElse("nessun appuntamento in calendario"));
+        }
+        if (plan.attendedLastAppointment() && !lastEvent.map(e -> !EventoCalendario.STATO_NO_SHOW.equals(e.getStato())).orElse(false)) {
+            return Outcome.dropped(lastEvent
+                    .map(event -> "ultimo appuntamento saltato il " + DAY.format(event.getData()))
                     .orElse("nessun appuntamento in calendario"));
         }
 

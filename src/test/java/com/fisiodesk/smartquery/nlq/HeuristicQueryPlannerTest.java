@@ -54,7 +54,9 @@ class HeuristicQueryPlannerTest {
         for (String question : new String[] {
                 "chi non ha ancora avuto miglioramenti?",
                 "pazienti che non hanno mostrato alcun miglioramento",
-                "pazienti con lombalgia senza alcun segno di miglioramento" }) {
+                "pazienti con lombalgia senza alcun segno di miglioramento",
+                "pazienti con dolore alla spalla che non hanno fatto progressi",
+                "chi non ha recuperato dopo il trattamento?" }) {
             QueryPlan plan = planner.plan(question);
             assertThat(plan.requireWorsening()).as(question).isTrue();
             assertThat(plan.requireImprovement()).as(question).isFalse();
@@ -81,6 +83,16 @@ class HeuristicQueryPlannerTest {
         assertThat(clues).extracting(PlanClue::field).contains("requireWorsening").doesNotContain("requireImprovement");
         assertThat(clues).filteredOn(c -> c.field().equals("requireWorsening"))
                 .extracting(PlanClue::term).containsExactly("non mostrano miglioramento");
+    }
+
+    @Test
+    void negatedMissedAppointmentIsTheOppositeFilter() {
+        QueryPlan plan = planner.plan(
+                "Pazienti con lombalgia migliorati che non hanno saltato l'ultimo appuntamento");
+
+        assertThat(plan.missedLastAppointment()).isFalse();
+        assertThat(plan.attendedLastAppointment()).isTrue();
+        assertThat(plan.requireImprovement()).isTrue();
     }
 
     @Test
