@@ -163,4 +163,7 @@ scripts/smoke-test.sh                # query target sul sistema in esecuzione
 scripts/load-test.py load 60 5       # 60 utenti che cercano insieme
 ```
 
-Per le scelte di progetto nel dettaglio, la configurazione, i limiti noti e le misure di carico: [docs/DESIGN.md](docs/DESIGN.md).
+## 8. Approfondimenti
+
+- [docs/RISPOSTE-CONSEGNA.md](docs/RISPOSTE-CONSEGNA.md): risposta puntuale a tutte le domande della consegna, con il riferimento al punto del codice.
+- [docs/DESIGN.md](docs/DESIGN.md): scelte di progetto nel dettaglio, configurazione, limiti noti, misure di carico.

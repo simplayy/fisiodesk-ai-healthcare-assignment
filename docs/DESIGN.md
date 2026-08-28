@@ -2,17 +2,7 @@
 
 Approfondimento delle scelte dietro l'MVP; il quadro generale è nel [README](../README.md).
 
-## Le domande della consegna, in breve
-
-- **Dove sono le informazioni?** Il dolore lombare e il miglioramento stanno nei testi liberi di `schede_valutazione` e `diario_trattamenti`; l'appuntamento saltato in `eventi_calendario`; nome e contatti in `pazienti`.
-- **Come estrarre "miglioramento" dai testi?** Ogni nota riceve un punteggio da -3 a +3 (dall'LLM o dal lessico) che viene salvato in `note_insights`. Per un paziente si sommano i punteggi delle sue note nel periodo: se la somma è positiva c'è miglioramento.
-- **Come identificare "dolore lombare"?** Ogni nota viene taggata con le aree anatomiche citate. Il lessico conosce i sinonimi (lombalgia, mal di schiena, low back pain, colpo della strega), l'LLM copre le formulazioni non previste.
-- **Come definire "ultimo appuntamento saltato"?** L'evento più recente del paziente fino alla data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta.
-- **Quale architettura permette risposte sotto i 2 secondi?** L'AI lavora prima, quando le note vengono indicizzate; la query fa solo letture su Mongo con indici. Una domanda nuova passa dall'LLM una volta sola e con un tempo massimo, poi il piano viene salvato.
-- **Come gestire i costi delle API?** Una chiamata per nota (una sola volta, anche se poi le query sono mille) e una per domanda distinta. Modello economico e un limite di chiamate al minuto per restare nella quota.
-- **Cosa succede se l'AI non funziona?** Timeout e un retry, poi il lessico prende il posto dell'LLM sia per le note sia per le domande: il sistema risponde comunque e nella risposta si vede quale componente ha lavorato. Quando l'AI torna, le note analizzate col lessico vengono rianalizzate.
-- **Come si aggiornano i dati?** Un job ogni 30 secondi indicizza le note nuove o modificate (confronto con l'hash del testo).
-- **Come vengono presentati i risultati?** Lista ordinata per punteggio di miglioramento; per ogni paziente l'ultimo appuntamento e gli estratti delle note che giustificano il risultato, più una spiegazione di come è nata la risposta e di chi è stato escluso e perché.
+Le domande poste dalla consegna hanno una risposta puntuale in [RISPOSTE-CONSEGNA.md](RISPOSTE-CONSEGNA.md).
 
 ## Scomposizione del problema
 
