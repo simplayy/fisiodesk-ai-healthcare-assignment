@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build stage: uses the Gradle wrapper so the image builds without any local toolchain.
 FROM eclipse-temurin:17-jdk AS build
 WORKDIR /workspace
@@ -5,11 +6,9 @@ WORKDIR /workspace
 COPY gradlew ./
 COPY gradle gradle
 COPY build.gradle settings.gradle ./
-# Resolve dependencies in a separate layer so source changes don't re-download them.
-RUN ./gradlew --no-daemon dependencies --quiet > /dev/null 2>&1 || true
-
 COPY src src
-RUN ./gradlew --no-daemon bootJar -x test
+# BuildKit cache mount keeps the Gradle dependency cache across image builds.
+RUN --mount=type=cache,target=/root/.gradle ./gradlew --no-daemon bootJar -x test
 
 # Runtime stage: JRE only.
 FROM eclipse-temurin:17-jre
