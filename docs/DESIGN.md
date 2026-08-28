@@ -51,6 +51,10 @@ Lessico fisioterapico italiano (sinonimi per area + marcatori di miglioramento/p
 
 Il punteggio è la somma dei match (clamp a ±3) e ogni match finisce nel campo `evidence`: il professionista vede *perché* un paziente è in lista. Sul dataset demo questo analizzatore da solo produce il risultato atteso esatto della query target.
 
+## Multi-tenancy
+
+Ogni nota e ogni annotazione portano `professionista_id`; la query accetta uno scope opzionale e legge solo le annotazioni di quel professionista (indice `{professionista_id, data}`), quindi un professionista non vede mai i pazienti dei colleghi. Lo scope è un parametro esplicito solo per la demo: nel gestionale arriva dal token dell'utente autenticato e il servizio non lo accetta dal client. Senza scope la vista è amministrativa.
+
 ## Integrazione LLM
 
 - **Libreria**: Spring AI 1.1 (starter OpenAI). Il client parla il protocollo chat-completions, quindi lo stesso codice funziona con OpenAI, Gemini (endpoint `/v1beta/openai`), OpenRouter, Azure o un Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura). Retry, timeout e serializzazione sono della libreria, non fatti in casa.

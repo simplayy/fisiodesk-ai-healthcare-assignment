@@ -55,6 +55,11 @@ button#run {
 }
 button#run:hover { background: var(--accent-dark); }
 button#run:disabled { opacity: .6; cursor: wait; }
+.scope-row { display: flex; gap: 10px; align-items: center; margin-top: 10px; font-size: .92rem; }
+.scope-row label { color: var(--muted, #666); }
+.scope-row select {
+  font: inherit; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: #fff;
+}
 
 .examples { margin-top: 12px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .chip {

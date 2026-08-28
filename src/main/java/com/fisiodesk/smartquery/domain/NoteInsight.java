@@ -20,6 +20,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 @Document("note_insights")
 // Query execution reads the window by date; the compound index serves per-patient timelines.
 @CompoundIndex(name = "paziente_data_idx", def = "{'paziente_id': 1, 'data': -1}")
+@CompoundIndex(name = "professionista_data_idx", def = "{'professionista_id': 1, 'data': -1}")
 public class NoteInsight {
 
     /** id = "<sourceCollection>:<noteId>" so re-indexing is an idempotent upsert. */

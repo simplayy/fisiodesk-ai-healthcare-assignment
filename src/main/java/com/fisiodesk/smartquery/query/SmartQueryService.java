@@ -43,14 +43,25 @@ public class SmartQueryService {
     }
 
     public List<PatientResult> execute(QueryPlan plan, Instant referenceDate) {
+        return execute(plan, referenceDate, null);
+    }
+
+    /**
+     * @param professionistaId when set, only notes written by this professional
+     *                         are considered: each professional sees their own
+     *                         patients. Null means no scoping (admin / demo).
+     */
+    public List<PatientResult> execute(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
         Instant from = referenceDate.atZone(ZoneOffset.UTC)
                 .minusMonths(plan.windowMonths())
                 .toInstant();
 
-        Map<ObjectId, List<NoteInsight>> byPatient =
-                insightRepository.findByDataBetween(from, referenceDate).stream()
-                        .filter(insight -> matchesArea(insight, plan))
-                        .collect(Collectors.groupingBy(NoteInsight::getPazienteId));
+        List<NoteInsight> inWindow = professionistaId == null
+                ? insightRepository.findByDataBetween(from, referenceDate)
+                : insightRepository.findByProfessionistaIdAndDataBetween(professionistaId, from, referenceDate);
+        Map<ObjectId, List<NoteInsight>> byPatient = inWindow.stream()
+                .filter(insight -> matchesArea(insight, plan))
+                .collect(Collectors.groupingBy(NoteInsight::getPazienteId));
 
         Map<String, Paziente> patients = pazienteRepository
                 .findAllById(byPatient.keySet().stream().map(ObjectId::toHexString).toList())

@@ -11,6 +11,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Duration;
 import java.time.Instant;
+import org.bson.types.ObjectId;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Locale;
@@ -47,8 +48,18 @@ public class QueryFacade {
     }
 
     public QueryResponse answer(String question, String referenceDateOverride) {
+        return answer(question, referenceDateOverride, null);
+    }
+
+    /**
+     * @param professionistaId optional scope: only this professional's notes.
+     *                         In production it comes from the authenticated
+     *                         user's token, not from the request body.
+     */
+    public QueryResponse answer(String question, String referenceDateOverride, String professionistaId) {
         Instant referenceDate = resolveReferenceDate(referenceDateOverride);
-        String cacheKey = question.trim().toLowerCase(Locale.ITALIAN) + "|" + referenceDate;
+        ObjectId professionista = parseProfessionista(professionistaId);
+        String cacheKey = question.trim().toLowerCase(Locale.ITALIAN) + "|" + referenceDate + "|" + professionista;
 
         QueryResponse cached = responseCache.getIfPresent(cacheKey);
         if (cached != null) {
@@ -57,13 +68,23 @@ public class QueryFacade {
 
         long start = System.nanoTime();
         QueryPlan plan = planningService.plan(question);
-        var results = queryService.execute(plan, referenceDate);
+        var results = queryService.execute(plan, referenceDate, professionista);
         long tookMs = (System.nanoTime() - start) / 1_000_000;
 
         QueryResponse response = new QueryResponse(
                 question, toView(plan, referenceDate), results, new Meta(tookMs, false, referenceDate));
         responseCache.put(cacheKey, response);
         return response;
+    }
+
+    private static ObjectId parseProfessionista(String id) {
+        if (id == null || id.isBlank()) {
+            return null;
+        }
+        if (!ObjectId.isValid(id.trim())) {
+            throw new IllegalArgumentException("professionistaId non valido: " + id);
+        }
+        return new ObjectId(id.trim());
     }
 
     /**

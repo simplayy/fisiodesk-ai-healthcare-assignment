@@ -25,7 +25,7 @@ Servizi disponibili:
 | Servizio | URL |
 |---|---|
 | Web UI + API | http://localhost:8080 |
-| API query | `POST http://localhost:8080/api/query` |
+| API query | `POST http://localhost:8080/api/query` (opzionale `professionistaId` per lo scoping) |
 | Stato indicizzazione | `GET http://localhost:8080/api/stats` |
 | MongoDB | `localhost:27017` |
 | Mongo Express | http://localhost:8081 |
@@ -226,12 +226,14 @@ docker compose up -d mongodb mongodb-seed
 `POST /api/query`
 
 ```json
-{ "question": "…", "referenceDate": "2024-12-31" }
+{ "question": "…", "referenceDate": "2024-12-31", "professionistaId": "507f1f77bcf86cd799439021" }
 ```
 
-Risposta: piano interpretato (trasparenza su come è stata capita la domanda), risultati ordinati per forza del miglioramento con evidenze per nota, metadati (latenza, cache, data di riferimento). `referenceDate` è opzionale.
+Risposta: piano interpretato (trasparenza su come è stata capita la domanda), risultati ordinati per forza del miglioramento con evidenze per nota, metadati (latenza, cache, data di riferimento). `referenceDate` e `professionistaId` sono opzionali.
 
-`GET /api/stats` — note indicizzate e analizzatore usato. `GET /actuator/health` — healthcheck.
+**Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriva dal token dell'utente autenticato, non dal body: qui è esplicito per la demo e la UI offre un selettore.
+
+`GET /api/professionisti` — professionisti presenti nei dati (per il selettore della UI). `GET /api/stats` — note indicizzate e analizzatore usato. `GET /actuator/health` — healthcheck.
 
 ## Riferimenti
 

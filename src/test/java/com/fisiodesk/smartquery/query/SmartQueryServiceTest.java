@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fisiodesk.smartquery.analysis.BodyArea;
@@ -125,6 +127,19 @@ class SmartQueryServiceTest {
         assertThat(results)
                 .extracting(PatientResult::cognome)
                 .containsExactlyInAnyOrder("Rossi", "Neri");
+    }
+
+    @Test
+    void professionalScopeOnlyReadsThatProfessionalsNotes() {
+        ObjectId professionista = new ObjectId();
+        when(insightRepository.findByProfessionistaIdAndDataBetween(eq(professionista), any(), any()))
+                .thenReturn(List.of(insight(improvingNoShow, "2024-11-15", Set.of("LUMBAR"), 2)));
+        QueryPlan plan = new QueryPlan(EnumSet.noneOf(BodyArea.class), false, false, 3, false, "test");
+
+        List<PatientResult> results = service.execute(plan, REFERENCE, professionista);
+
+        assertThat(results).extracting(PatientResult::cognome).containsExactly("Rossi");
+        verify(insightRepository, never()).findByDataBetween(any(), any());
     }
 
     private NoteInsight insight(ObjectId patient, String date, Set<String> areas, int score) {

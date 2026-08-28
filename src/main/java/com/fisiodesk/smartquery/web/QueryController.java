@@ -25,11 +25,13 @@ public class QueryController {
             @Size(max = 500, message = "La domanda non puo' superare i 500 caratteri")
             String question,
             /** Optional ISO date (yyyy-MM-dd) used as "today" for relative windows. */
-            String referenceDate) {
+            String referenceDate,
+            /** Optional scope: only this professional's patients (ObjectId hex). */
+            String professionistaId) {
     }
 
     @PostMapping("/query")
     public QueryResponse query(@Valid @RequestBody QueryRequest request) {
-        return queryFacade.answer(request.question(), request.referenceDate());
+        return queryFacade.answer(request.question(), request.referenceDate(), request.professionistaId());
     }
 }

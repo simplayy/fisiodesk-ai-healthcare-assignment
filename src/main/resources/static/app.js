@@ -8,6 +8,7 @@
   var planChips = document.getElementById("plan-chips");
   var statusEl = document.getElementById("status");
   var footerEl = document.getElementById("footer");
+  var professionistaEl = document.getElementById("professionista");
 
   var AREA_LABELS = {
     LUMBAR: "zona lombare",
@@ -43,6 +44,9 @@
     if (plan.missedLastAppointment) chips.push("Ultimo appuntamento saltato");
     chips.push("Dal " + fmtDate(plan.from) + " al " + fmtDate(plan.to));
     chips.push("Parser: " + (plan.planner === "llm" ? "AI" : "regole"));
+    if (professionistaEl.value) {
+      chips.push("Solo pazienti del professionista " + professionistaEl.value.slice(-4));
+    }
     chips.forEach(function (label) {
       planChips.appendChild(el("span", "plan-chip", label));
     });
@@ -130,7 +134,7 @@
     fetch("/api/query", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: question })
+      body: JSON.stringify({ question: question, professionistaId: professionistaEl.value || null })
     })
       .then(function (res) {
         return res.json().then(function (body) {
@@ -149,6 +153,20 @@
         runBtn.disabled = false;
         runBtn.textContent = "Cerca";
       });
+  }
+
+  function loadProfessionisti() {
+    fetch("/api/professionisti")
+      .then(function (res) { return res.json(); })
+      .then(function (list) {
+        list.forEach(function (p) {
+          var opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = "Professionista …" + p.id.slice(-4) + " (" + p.pazienti + " pazienti)";
+          professionistaEl.appendChild(opt);
+        });
+      })
+      .catch(function () { /* the selector simply stays on "all" */ });
   }
 
   function loadStats() {
@@ -180,6 +198,11 @@
     });
   });
 
+  professionistaEl.addEventListener("change", function () {
+    if (questionEl.value.trim()) runQuery();
+  });
+
+  loadProfessionisti();
   loadStats();
   setInterval(loadStats, 15000);
 })();

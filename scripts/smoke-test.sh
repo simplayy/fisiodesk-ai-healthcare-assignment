@@ -46,3 +46,20 @@ if excluded & set(found):
 print("OK: target query returns exactly the expected patients")
 PY
 )"
+
+echo "Checking professional scoping ..."
+check_scope() {
+  local prof="$1" expected="$2"
+  local found
+  found=$(curl -sf -X POST "$BASE_URL/api/query" -H 'Content-Type: application/json' \
+    -d "{\"question\":\"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento\",\"professionistaId\":\"$prof\"}" \
+    | python3 -c 'import json,sys; print(" ".join(sorted(r["cognome"] for r in json.load(sys.stdin)["results"])))')
+  if [ "$found" != "$expected" ]; then
+    echo "FAIL: professional $prof expected [$expected], got [$found]"; exit 1
+  fi
+  echo "  professional ...${prof: -4}: [$found] OK"
+}
+check_scope 507f1f77bcf86cd799439021 "Bianchi Romano Rossi"
+check_scope 507f1f77bcf86cd799439022 ""
+check_scope 507f1f77bcf86cd799439023 "Colombo"
+echo "OK: each professional only sees their own patients"
