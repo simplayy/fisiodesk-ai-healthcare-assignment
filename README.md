@@ -142,9 +142,9 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 
 ## Trade-off principali
 
-- **AI in fase di scrittura, non di lettura.** Ogni nota è analizzata una volta e il risultato è indicizzato; la query è solo letture Mongo. Costo proporzionale alle note, non alle ricerche; latenza sotto i 100 ms. In cambio una nota nuova è cercabile al ciclo successivo (30 s), non nell'istante.
-- **Budget di latenza sul planner, con fallback a regole.** La domanda è tradotta in un piano dall'LLM entro un budget; oltre, risponde il parser a regole e il piano LLM viene memorizzato per la volta dopo. Tempo di risposta garantito; la prima richiesta di una domanda nuova può essere interpretata in modo più grezzo, e la risposta lo dichiara.
-- **Lessico clinico + LLM invece di embeddings.** Per la query target servono segnali direzionali (migliora / non migliora) e di area anatomica: un classificatore per nota li cattura in modo spiegabile e il lessico corregge le negazioni che i modelli piccoli sbagliano. La vector search resta il passo successivo per le domande aperte.
+- **Analisi AI al momento dell'indicizzazione, non della ricerca.** Ogni nota viene analizzata una volta e il risultato salvato; la query fa solo letture su Mongo. Il costo dipende dal numero di note e la latenza resta sotto i 100 ms. Lo svantaggio è che una nota appena scritta diventa cercabile al ciclo successivo dell'indexer (30 s), non subito.
+- **Limite di tempo sul planner, con fallback a regole.** L'LLM ha un tempo massimo per tradurre la domanda in un piano; se lo supera risponde il parser a regole e il piano dell'LLM viene salvato per la volta successiva. Così il tempo di risposta è sempre sotto controllo, ma la prima richiesta di una domanda nuova può essere interpretata in modo più grossolano (la risposta indica quale planner ha lavorato).
+- **Lessico clinico + LLM invece di embeddings.** Per la query target servono segnali di direzione (migliora / non migliora) e di area anatomica: un classificatore per nota li estrae in modo spiegabile e il lessico corregge le negazioni che i modelli piccoli sbagliano. La vector search avrebbe senso per domande aperte, che qui non ci sono.
 
 ## Struttura del progetto
 
@@ -185,7 +185,7 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ## Troubleshooting
 
 - **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
-- **Mongo Express** (http://localhost:8081) è esposto senza password ma solo su `127.0.0.1`: è un comodo browser dei dati per la review, non va esposto altrove.
+- **Mongo Express** (http://localhost:8081) è senza password ma ascolta solo su `127.0.0.1`: serve per guardare i dati durante la review, non per altro.
 - **Ripartire da zero**: `docker compose down -v && docker compose up -d --build` (dati demo re-importati e ri-indicizzati automaticamente).
 - **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
 - **Modalità AI locale lenta al primo avvio**: il download del modello è visibile con `docker logs fisiodesk-ollama-pull`; la prima analisi delle note su CPU richiede qualche minuto (`/api/stats` mostra `analyzedByLlm` crescere), nel frattempo le query rispondono con le analisi deterministiche.
@@ -211,19 +211,19 @@ docker compose up -d mongodb mongodb-seed
 { "question": "…", "referenceDate": "2024-12-31", "professionistaId": "507f1f77bcf86cd799439021" }
 ```
 
-Risposta: piano interpretato (trasparenza su come è stata capita la domanda), risultati ordinati per forza del miglioramento con evidenze per nota, metadati (latenza, cache, data di riferimento) e un blocco `explain`. `referenceDate` e `professionistaId` sono opzionali.
+Risposta: il piano interpretato (come è stata capita la domanda), i risultati ordinati per punteggio di miglioramento con le evidenze per nota, i metadati (latenza, cache, data di riferimento) e un blocco `explain`. `referenceDate` e `professionistaId` sono opzionali.
 
 **Spiegazione del risultato (`explain`).** Ogni risposta include come è stata prodotta, ricavato da quello che la pipeline ha fatto davvero e senza chiamate AI in più: origine del piano (AI in questa richiesta, piano memorizzato, parser a regole per timeout/AI assente), parole della domanda riconosciute dal lessico e come sono state lette (`"dolore lombare" → LUMBAR`), tempi per tappa (interpretazione, ricerca note, valutazione pazienti, totale) con i conteggi (note nella finestra, note sull'area, pazienti coinvolti), da dove viene la data di riferimento, e **ogni paziente con note nel periodo che è stato escluso, con il motivo** ("nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)", "ultimo appuntamento completato il 20/12/2024, non saltato", "nessuna nota sull'area richiesta"). La UI lo apre in un popup dal link "Come è nato il risultato" accanto al conteggio, ed evidenzia nelle note i termini che hanno pesato. Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
 
-`DELETE /api/cache` svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non sono una cache e non vengono toccate. Endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
+`DELETE /api/cache` svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non vengono toccate. È un endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
 
-**Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriva dal token dell'utente autenticato, non dal body: qui è esplicito per la demo e la UI offre un selettore.
+**Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriverebbe dal token dell'utente autenticato; qui è nel body per la demo e la UI ha un selettore.
 
 `GET /api/professionisti` restituisce i professionisti presenti nei dati (per il selettore della UI). `GET /api/stats` restituisce il numero di note indicizzate e l'analizzatore usato. `GET /actuator/health` è l'healthcheck.
 
 ## Riferimenti
 
-- [Spring AI 1.1 – OpenAI chat e structured outputs](https://docs.spring.io/spring-ai/reference/1.1/api/chat/openai-chat.html) · [ChatClient](https://docs.spring.io/spring-ai/reference/1.1/api/chatclient.html)
-- [Spring AI 2.0 / Spring Boot 4 – perché qui resta la linea 1.1](https://www.herodevs.com/blog-posts/spring-ai-2-0-is-coming-soon-your-boot-4-0-migration-does-not-have-to-start-tomorrow)
-- [Ollama – structured outputs](https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html)
-- [Immagine Docker ufficiale di MongoDB](https://hub.docker.com/_/mongo)
+- [Spring AI 1.1 - OpenAI chat e structured outputs](https://docs.spring.io/spring-ai/reference/1.1/api/chat/openai-chat.html), [ChatClient](https://docs.spring.io/spring-ai/reference/1.1/api/chatclient.html)
+- [Spring AI 2.0 richiede Spring Boot 4](https://www.herodevs.com/blog-posts/spring-ai-2-0-is-coming-soon-your-boot-4-0-migration-does-not-have-to-start-tomorrow)
+- [Ollama, structured outputs](https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html)
+- [Immagine Docker di MongoDB](https://hub.docker.com/_/mongo)
