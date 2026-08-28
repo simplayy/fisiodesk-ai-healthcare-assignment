@@ -53,41 +53,14 @@ Il dataset copre marzo-dicembre 2024, quindi come "oggi" viene usata la data del
 
 ```mermaid
 flowchart LR
-    subgraph client [Professionista]
-        UI[Web UI / API client]
+    subgraph prima [Prima, in background]
+        N[Note cliniche] -->|"una volta per nota"| A[Analisi del testo<br/>LLM o lessico] --> I[(note_insights<br/>area + punteggio)]
     end
-
-    subgraph app [Spring Boot - fisiodesk-smart-query]
-        QP[Query Planning<br/>LLM + guardrail lessicale<br/>budget 1.5s, fallback a regole]
-        EX[Query Executor<br/>solo letture indicizzate]
-        CACHE[(Cache risposte<br/>60s in-memory)]
-        IDX[Insight Indexer<br/>batch incrementale]
-        AN[Text Analysis<br/>LLM con fallback a lessico]
+    subgraph dopo [Quando il professionista cerca]
+        D[Domanda] --> F[Filtro<br/>area, periodo, miglioramento, no-show] --> R[Ricerca su MongoDB] --> P[Pazienti + note che lo dimostrano]
     end
-
-    subgraph mongo [MongoDB]
-        SV[(schede_valutazione)]
-        DT[(diario_trattamenti)]
-        EC[(eventi_calendario)]
-        PZ[(pazienti)]
-        NI[(note_insights<br/>pre-calcolata)]
-        QPL[(query_plans<br/>piani memorizzati)]
-    end
-
-    LLM[LLM via Spring AI<br/>Ollama locale, Gemini o altro endpoint OpenAI-compatibile]
-
-    UI -->|POST /api/query| QP --> EX
-    QP <--> QPL
-    EX --> CACHE
-    EX --> NI
-    EX --> EC
-    EX --> PZ
-    IDX --> SV
-    IDX --> DT
-    IDX --> AN
-    AN -.->|solo in fase di indicizzazione| LLM
-    QP -.->|solo per domande mai viste| LLM
-    AN --> NI
+    I --> R
+    C[(eventi_calendario, pazienti)] --> R
 ```
 
 L'idea è una sola: l'AI non lavora nel momento della ricerca, ma prima.

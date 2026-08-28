@@ -27,6 +27,47 @@ La query target mescola quattro sotto-problemi con nature diverse:
 
 I primi due sono costosi e ambigui: vanno risolti una volta per nota e memorizzati. Gli ultimi due sono filtri banali su dati strutturati: vanno risolti a ogni query. Il resto dell'architettura segue da questa separazione.
 
+## Architettura
+
+```mermaid
+flowchart LR
+    subgraph client [Professionista]
+        UI[Web UI / API client]
+    end
+
+    subgraph app [Spring Boot - fisiodesk-smart-query]
+        QP[Query Planning<br/>LLM + guardrail lessicale<br/>budget 1.5s, fallback a regole]
+        EX[Query Executor<br/>solo letture indicizzate]
+        CACHE[(Cache risposte<br/>60s in-memory)]
+        IDX[Insight Indexer<br/>batch incrementale]
+        AN[Text Analysis<br/>LLM con fallback a lessico]
+    end
+
+    subgraph mongo [MongoDB]
+        SV[(schede_valutazione)]
+        DT[(diario_trattamenti)]
+        EC[(eventi_calendario)]
+        PZ[(pazienti)]
+        NI[(note_insights<br/>pre-calcolata)]
+        QPL[(query_plans<br/>piani memorizzati)]
+    end
+
+    LLM[LLM via Spring AI<br/>Ollama locale, Gemini o altro endpoint OpenAI-compatibile]
+
+    UI -->|POST /api/query| QP --> EX
+    QP <--> QPL
+    EX --> CACHE
+    EX --> NI
+    EX --> EC
+    EX --> PZ
+    IDX --> SV
+    IDX --> DT
+    IDX --> AN
+    AN -.->|solo in fase di indicizzazione| LLM
+    QP -.->|solo per domande mai viste| LLM
+    AN --> NI
+```
+
 ## La collection `note_insights`
 
 Un documento per nota clinica analizzata:
