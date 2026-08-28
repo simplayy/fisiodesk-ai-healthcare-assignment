@@ -4,9 +4,9 @@ Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un profes
 
 > *"Mostra pazienti con dolore lombare che hanno mostrato miglioramento negli ultimi 3 mesi ma hanno saltato l'ultimo appuntamento"*
 
-e ottiene la lista dei pazienti corrispondenti con le evidenze cliniche (estratti delle schede e del diario trattamenti) che giustificano ogni risultato. La ricerca sui testi non usa mai l'AI — le note sono già analizzate e indicizzate — quindi risponde in poche decine di millisecondi; l'AI entra solo per interpretare una domanda mai vista prima, una volta sola, entro un budget di tempo.
+e ottiene la lista dei pazienti corrispondenti, con gli estratti delle schede e del diario che giustificano ogni risultato. La ricerca sui testi non chiama l'AI: le note sono già analizzate e indicizzate, quindi la risposta arriva in poche decine di millisecondi. L'AI serve solo a interpretare una domanda nuova, una volta sola e con un limite di tempo.
 
-**Stack**: Java 17 · Spring Boot 3.5 · Spring AI 1.1 · Gradle · MongoDB — allineato allo stack esistente di FisioDesk/Dottai, così i componenti descritti qui si integrano nel backend attuale senza introdurre un nuovo runtime (Spring Boot 3.5 è la linea che l'azienda usa oggi; Spring AI 1.1 è la versione che la supporta, la 2.0 richiede Boot 4). Frontend demo in HTML/JS statico servito dalla stessa applicazione.
+**Stack**: Java 17, Spring Boot 3.5, Spring AI 1.1, Gradle, MongoDB. È lo stesso stack di FisioDesk/Dottai, quindi i componenti si integrano nel backend attuale senza aggiungere un runtime (Spring AI 1.1 è la versione compatibile con Boot 3; la 2.0 richiede Boot 4). Il frontend demo è HTML/JS statico servito dall'applicazione stessa.
 
 ---
 
@@ -15,7 +15,7 @@ e ottiene la lista dei pazienti corrispondenti con le evidenze cliniche (estratt
 Prerequisiti: Docker con Compose v2 e BuildKit (qualsiasi Docker Desktop o Docker Engine recente).
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/simplayy/fisiodesk-ai-healthcare-assignment.git
 cd fisiodesk-ai-healthcare-assignment
 docker compose up -d --build
 ```
@@ -124,13 +124,13 @@ flowchart LR
     AN --> NI
 ```
 
-### L'idea centrale: indicizzare, non ri-analizzare
+### Idea di fondo: analizzare ogni nota una volta sola
 
-Il vincolo <2s con 50+ professionisti concorrenti e il budget AI limitato portano alla stessa conclusione: **l'AI non può stare nel percorso di risposta della query sui testi**. La pipeline è quindi divisa in due:
+Con il vincolo dei 2 s per 50+ professionisti concorrenti e un budget AI limitato, l'AI non può stare nel percorso di risposta della query. La pipeline è divisa in due:
 
-1. **Indicizzazione (batch, incrementale)** — un job periodico confronta `schede_valutazione` e `diario_trattamenti` con la collection `note_insights`: ogni nota nuova o modificata (hash SHA-256 del testo) viene analizzata **una sola volta** e il risultato persistito: aree anatomiche citate (gestendo i sinonimi: "lombalgia", "mal di schiena", "low back pain", "colpo della strega" → `LUMBAR`), segnale di miglioramento (da −3 a +3, con gestione delle negazioni: "non risponde bene alla terapia" non è un miglioramento), evidenze testuali. Il costo AI è proporzionale alle note scritte, non alle query eseguite.
+1. **Indicizzazione (batch, incrementale)**. Un job periodico confronta `schede_valutazione` e `diario_trattamenti` con la collection `note_insights`: ogni nota nuova o modificata (hash SHA-256 del testo) viene analizzata una sola volta e il risultato salvato: aree anatomiche citate (con i sinonimi: "lombalgia", "mal di schiena", "low back pain", "colpo della strega" → `LUMBAR`), segnale di miglioramento (da -3 a +3, tenendo conto delle negazioni: "non risponde bene alla terapia" non è un miglioramento) e frasi di evidenza. Il costo AI dipende da quante note vengono scritte, non da quante query vengono fatte.
 
-2. **Query (real-time)** — la domanda viene tradotta in un piano strutturato (aree, finestra temporale, miglioramento richiesto, filtro no-show). Il piano lo produce l'LLM (output vincolato a JSON schema) fuso con i marcatori espliciti del parser a regole — il modello capisce le parafrasi, il lessico garantisce che i termini espliciti non vadano persi — oppure, senza LLM, il solo parser a regole. Un piano non dipende dai dati, quindi viene calcolato una volta per domanda e memorizzato in `query_plans`. Il piano viene poi eseguito con normali query MongoDB indicizzate su `note_insights` + `eventi_calendario` + `pazienti`: nessuna analisi di testo a runtime. Una cache in-memory (60s) assorbe le domande ripetute.
+2. **Query (real-time)**. La domanda viene tradotta in un piano strutturato (aree, finestra temporale, miglioramento richiesto, filtro no-show). Il piano lo produce l'LLM (output vincolato a JSON schema) e viene fuso con i marcatori espliciti del parser a regole: il modello capisce le parafrasi, il lessico evita che i termini espliciti vadano persi. Senza LLM lavora il solo parser a regole. Un piano non dipende dai dati, quindi viene calcolato una volta per domanda e salvato in `query_plans`. Poi il piano viene eseguito con normali query MongoDB indicizzate su `note_insights`, `eventi_calendario` e `pazienti`: nessuna analisi di testo a runtime. Una cache in memoria (60 s) assorbe le domande ripetute.
 
 "Ultimo appuntamento saltato" è definito così: l'evento più recente del paziente con data ≤ data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta come saltato.
 
@@ -213,13 +213,13 @@ docker compose up -d mongodb mongodb-seed
 
 Risposta: piano interpretato (trasparenza su come è stata capita la domanda), risultati ordinati per forza del miglioramento con evidenze per nota, metadati (latenza, cache, data di riferimento) e un blocco `explain`. `referenceDate` e `professionistaId` sono opzionali.
 
-**Spiegazione del risultato (`explain`).** Ogni risposta racconta come è stata prodotta, a partire da ciò che la pipeline ha fatto davvero e senza chiamate AI aggiuntive: origine del piano (AI in questa richiesta, piano memorizzato, parser a regole per timeout/AI assente), parole della domanda riconosciute dal lessico e come sono state lette (`"dolore lombare" → LUMBAR`), tempi per tappa (interpretazione, ricerca note, valutazione pazienti, totale) con i conteggi (note nella finestra, note sull'area, pazienti coinvolti), da dove viene la data di riferimento, e **ogni paziente con note nel periodo che è stato escluso, con il motivo** ("nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)", "ultimo appuntamento completato il 20/12/2024, non saltato", "nessuna nota sull'area richiesta"). La UI lo apre in un popup dal link "Come è nato il risultato" accanto al conteggio, ed evidenzia nelle note i termini che hanno pesato. Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
+**Spiegazione del risultato (`explain`).** Ogni risposta include come è stata prodotta, ricavato da quello che la pipeline ha fatto davvero e senza chiamate AI in più: origine del piano (AI in questa richiesta, piano memorizzato, parser a regole per timeout/AI assente), parole della domanda riconosciute dal lessico e come sono state lette (`"dolore lombare" → LUMBAR`), tempi per tappa (interpretazione, ricerca note, valutazione pazienti, totale) con i conteggi (note nella finestra, note sull'area, pazienti coinvolti), da dove viene la data di riferimento, e **ogni paziente con note nel periodo che è stato escluso, con il motivo** ("nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)", "ultimo appuntamento completato il 20/12/2024, non saltato", "nessuna nota sull'area richiesta"). La UI lo apre in un popup dal link "Come è nato il risultato" accanto al conteggio, ed evidenzia nelle note i termini che hanno pesato. Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
 
-`DELETE /api/cache` — svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non sono una cache e non vengono toccate. Endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
+`DELETE /api/cache` svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non sono una cache e non vengono toccate. Endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
 
 **Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriva dal token dell'utente autenticato, non dal body: qui è esplicito per la demo e la UI offre un selettore.
 
-`GET /api/professionisti` — professionisti presenti nei dati (per il selettore della UI). `GET /api/stats` — note indicizzate e analizzatore usato. `GET /actuator/health` — healthcheck.
+`GET /api/professionisti` restituisce i professionisti presenti nei dati (per il selettore della UI). `GET /api/stats` restituisce il numero di note indicizzate e l'analizzatore usato. `GET /actuator/health` è l'healthcheck.
 
 ## Riferimenti
 

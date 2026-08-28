@@ -13,7 +13,7 @@ La query target mescola quattro sotto-problemi con nature diverse:
 | "negli ultimi 3 mesi" | filtro temporale | query (real-time) |
 | "hanno saltato l'ultimo appuntamento" | dato strutturato | query (real-time) |
 
-I primi due sono costosi e ambigui: vanno risolti una volta per nota e memorizzati. Gli ultimi due sono filtri banali su dati strutturati: vanno risolti a ogni query. Tutta l'architettura discende da questa separazione.
+I primi due sono costosi e ambigui: vanno risolti una volta per nota e memorizzati. Gli ultimi due sono filtri banali su dati strutturati: vanno risolti a ogni query. Il resto dell'architettura segue da questa separazione.
 
 ## La collection `note_insights`
 
@@ -57,17 +57,17 @@ Ogni nota e ogni annotazione portano `professionista_id`; la query accetta uno s
 
 ## Spiegabilità
 
-Un risultato clinico non deve essere opaco. La risposta porta con sé il tracciato reale dell'esecuzione (`explain`): origine del piano e tempo di attesa, termini del lessico che hanno determinato ogni campo, tappe con durata e conteggi, pazienti esclusi con il motivo calcolato dallo stesso codice che li ha esclusi. È volutamente un tracciato e non un riassunto generato dal modello: costerebbe una chiamata a ogni query, romperebbe il vincolo di latenza e sarebbe meno affidabile dei dati.
+La risposta include il tracciato dell'esecuzione (`explain`): origine del piano e tempo di attesa, termini del lessico che hanno determinato ogni campo, tappe con durata e conteggi, pazienti esclusi con il motivo calcolato dallo stesso codice che li ha esclusi. Ho preferito un tracciato a un riassunto generato dal modello: costerebbe una chiamata a ogni query, sforerebbe la latenza e sarebbe meno affidabile dei dati.
 
 ## Integrazione LLM
 
-- **Libreria**: Spring AI 1.1 (starter OpenAI). Il client parla il protocollo chat-completions, quindi lo stesso codice funziona con OpenAI, Gemini (endpoint `/v1beta/openai`), OpenRouter, Azure o un Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura). Retry, timeout e serializzazione sono della libreria, non fatti in casa.
-- **Structured output**: l'output del modello è vincolato a uno schema JSON generato dai record Java (`BeanOutputConverter` + `response_format: json_schema`). Il modello può sbagliare il *significato*, non la *forma*: niente parsing difensivo, niente valori fuori enum.
+- **Libreria**: Spring AI 1.1 (starter OpenAI). Il client parla il protocollo chat-completions, quindi lo stesso codice funziona con OpenAI, Gemini (endpoint `/v1beta/openai`), OpenRouter, Azure o un Ollama on-premise (rilevante in sanità: i testi clinici possono non uscire dall'infrastruttura). Retry, timeout e serializzazione li fa la libreria.
+- **Structured output**: l'output del modello è vincolato a uno schema JSON generato dai record Java (`BeanOutputConverter` + `response_format: json_schema`). Il modello può sbagliare il significato ma non la forma: niente parsing difensivo, niente valori fuori enum.
 - **Dove**: (1) analisi nota in fase di indicizzazione; (2) traduzione domanda→piano, una sola volta per domanda distinta (il piano non dipende dai dati ed è memorizzato in `query_plans`).
 - **Budget**: il costo è O(note scritte + domande distinte), non O(query). 1.000 professionisti × 20 note/giorno ≈ 20k chiamate corte/giorno, batchabili e con modello economico.
 - **Quote del provider**: l'indexer è ritmato (`max-llm-calls-per-minute`) e può usare un modello diverso dal planner (`analysis-model`): i limiti di richieste/minuto sono per modello, quindi una ri-indicizzazione massiva non può mai rallentare le domande interattive né farle ripiegare sul parser a regole.
 - **Latenza**: il planner ha un budget (`plan-timeout-ms`: 1,5 s di default, 1,8 s con Gemini, cioè l'obiettivo di 2 s meno l'esecuzione che costa decine di ms). Oltre, la richiesta è servita col piano a regole mentre l'LLM completa in background e il piano viene salvato; richieste concorrenti per la stessa domanda condividono una sola chiamata; le domande suggerite sono pre-pianificate all'avvio e il client LLM viene "scaldato" con chiamate reali (dopo un riavvio la prima chiamata paga apertura HTTPS e JIT, ~0,8 s in più); il pool delle chiamate di planning è largo (16) perché una raffica di domande nuove non deve accodarsi. Il client HTTP verso il provider è forzato a HTTP/1.1 con pool di connessioni: con HTTP/2 il client JDK multiplexava tutte le chiamate su una connessione e il provider le serviva in serie (dieci domande simultanee tornavano a scalini di ~60 ms, l'ultima fuori budget); con una connessione per chiamata dieci domande nuove simultanee sono pianificate dall'LLM in 0,85–1,2 s ciascuna.
-- **Guardrail lessicale**: il piano LLM viene fuso con quello a regole — le aree anatomiche del lessico prevalgono (vocabolario chiuso, il lessico è preciso), i flag espliciti trovati dal lessico vengono aggiunti, "peggioramento" vince su "miglioramento" in caso di contrasto. Su un set di 10 domande di controllo il modello locale da 1.5B da solo ne interpreta correttamente 6 (sbaglia "guariti", "sta meglio", una negazione, un'area); con il guardrail sono tutte corrette. Con un modello più capace il guardrail è neutro (con Gemini Flash-Lite le 10 domande sono corrette già senza).
+- **Guardrail lessicale**: il piano LLM viene fuso con quello a regole: le aree anatomiche del lessico prevalgono (vocabolario chiuso, il lessico è preciso), i flag espliciti trovati dal lessico vengono aggiunti, "peggioramento" vince su "miglioramento" in caso di contrasto. Su un set di 10 domande di controllo il modello locale da 1.5B da solo ne interpreta correttamente 6 (sbaglia "guariti", "sta meglio", una negazione, un'area); con il guardrail sono tutte corrette. Con un modello più capace il guardrail è neutro (con Gemini Flash-Lite le 10 domande sono corrette già senza).
 - **Guasti**: timeout, un retry, fallback deterministico per chiamata, upgrade automatico (una tantum) delle note analizzate col fallback quando l'LLM torna su. Nessun circuito manuale da riarmare.
 - **Scelta del modello locale**: `qwen2.5:1.5b` per girare su CPU e 8 GB di RAM insieme a MongoDB; la famiglia Qwen è tra le più solide in italiano. Con più risorse (GPU) il candidato naturale è Qwen3 8B: basta cambiare `AI_MODEL`.
 
@@ -81,7 +81,8 @@ Un risultato clinico non deve essere opaco. La risposta porta con sé il traccia
 
 - **I candidati vengono dalle note.** Una domanda puramente di calendario ("chi ha saltato l'ultimo appuntamento?") considera solo i pazienti che hanno almeno una nota nella finestra: chi non è più in cura da mesi non compare. È coerente con l'idea del sistema (ricerca clinica, non gestione agenda), ma per una domanda di sola compliance servirebbe partire da `eventi_calendario`.
 - **Cancellazioni non riconciliate.** Se una nota viene eliminata dal gestionale, il suo documento in `note_insights` resta. L'indexer confronta solo ciò che esiste; una passata di pulizia è un `deleteMany` sugli id non più presenti.
-- **Modello locale e budget del planner.** Con Ollama su CPU una domanda nuova supera quasi sempre il budget: la risposta arriva dal parser a regole e il piano dell'LLM viene usato dalla volta successiva. È il comportamento previsto, ma va detto: la modalità locale mostra il valore dell'LLM sulle *note*, non sull'interpretazione in tempo reale.
+- **Domande senza filtri riconosciuti.** Una domanda in cui né il lessico né il modello trovano un'area, un andamento o il filtro no-show ("ciao") restituisce tutti i pazienti con note nel periodo invece di un errore. Allo stesso modo la negazione sul no-show ("che *non* hanno saltato l'ultimo appuntamento") non è gestita e viene letta come "saltato".
+- **Modello locale e budget del planner.** Con Ollama su CPU una domanda nuova supera quasi sempre il budget: la risposta arriva dal parser a regole e il piano dell'LLM viene usato dalla volta successiva. È il comportamento previsto: la modalità locale mostra il valore dell'LLM sulle note, non sull'interpretazione in tempo reale.
 
 ## Percorso di crescita (non implementato, per la call)
 
