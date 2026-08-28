@@ -57,6 +57,8 @@ services:
       AI_COMPLETIONS_PATH: ${AI_COMPLETIONS_PATH:-/v1/chat/completions}
       AI_API_KEY: ${AI_API_KEY:-not-needed}
       AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
+      AI_ANALYSIS_MODEL: ${AI_ANALYSIS_MODEL:-}
+      AI_INDEXER_RPM: ${AI_INDEXER_RPM:-0}
       # Fixed "today" for the 2024 demo dataset; remove in a live system.
       REFERENCE_DATE: ${REFERENCE_DATE:-}
     depends_on:

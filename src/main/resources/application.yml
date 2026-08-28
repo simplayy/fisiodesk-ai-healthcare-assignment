@@ -4,6 +4,8 @@ spring:
   data:
     mongodb:
       uri: ${MONGO_URI:mongodb://localhost:27017/fisiodesk}
+      # Create the indexes declared on the entities at startup (idempotent).
+      auto-index-creation: true
   ai:
     openai:
       # Any OpenAI-compatible endpoint: OpenAI itself, OpenRouter, Azure, a local
@@ -45,12 +47,20 @@ smartquery:
   indexer:
     initial-delay-ms: 3000
     fixed-delay-ms: 30000
+    # Pacing of the LLM calls made while indexing (0 = none). Keep it below the
+    # provider's per-minute quota so a backlog is analyzed steadily.
+    max-llm-calls-per-minute: ${AI_INDEXER_RPM:0}
   ai:
     # false = deterministic analyzer only, no LLM calls at all
     enabled: ${AI_ENABLED:false}
     # Max time a request waits for the LLM planner before answering with the
-    # rule-based plan (the LLM plan is still stored for next time).
+    # rule-based plan (the LLM plan is still stored for next time). Size it on
+    # the response-time target minus execution (tens of ms): with a 2 s target
+    # a hosted model can be given up to ~1.8 s.
     plan-timeout-ms: ${AI_PLAN_TIMEOUT_MS:1500}
+    # Optional separate model for note analysis, so background indexing and
+    # interactive planning draw on different provider quotas. Empty = same model.
+    analysis-model: ${AI_ANALYSIS_MODEL:}
   warmup:
     # Pre-planned at startup so the first click in the UI is fast.
     questions:

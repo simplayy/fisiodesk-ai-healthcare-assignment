@@ -13,6 +13,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,17 +38,28 @@ public class InsightIndexer {
     private final NoteInsightRepository insightRepository;
     private final TextAnalysisService analysisService;
     private final AiProperties aiProperties;
+    private final long minIntervalNanos;
+    private long lastLlmCallNanos;
 
+    /**
+     * @param maxLlmCallsPerMinute pacing of the LLM calls made by this batch
+     *                             (0 = no pacing). Kept under the provider's
+     *                             per-minute quota, a large backlog is analyzed
+     *                             steadily instead of tripping 429s and falling
+     *                             back to the lexicon for most of the batch.
+     */
     public InsightIndexer(SchedaValutazioneRepository schedaRepository,
                           DiarioTrattamentoRepository diarioRepository,
                           NoteInsightRepository insightRepository,
                           TextAnalysisService analysisService,
-                          AiProperties aiProperties) {
+                          AiProperties aiProperties,
+                          @Value("${smartquery.indexer.max-llm-calls-per-minute:0}") int maxLlmCallsPerMinute) {
         this.schedaRepository = schedaRepository;
         this.diarioRepository = diarioRepository;
         this.insightRepository = insightRepository;
         this.analysisService = analysisService;
         this.aiProperties = aiProperties;
+        this.minIntervalNanos = maxLlmCallsPerMinute > 0 ? 60_000_000_000L / maxLlmCallsPerMinute : 0;
     }
 
     @Scheduled(initialDelayString = "${smartquery.indexer.initial-delay-ms:3000}",
@@ -84,11 +96,28 @@ public class InsightIndexer {
             if (current != null && hash.equals(current.getTextHash()) && !shouldUpgrade(current)) {
                 continue;
             }
+            pace();
             ClinicalNoteAnalysis analysis = analysisService.analyze(note.getDescrizione());
             insightRepository.save(toInsight(id, source, note, hash, analysis));
             updated++;
         }
         return updated;
+    }
+
+    /** Spaces LLM calls evenly so the batch never exceeds the configured rate. */
+    private void pace() {
+        if (minIntervalNanos == 0 || !aiProperties.enabled()) {
+            return;
+        }
+        long waitNanos = lastLlmCallNanos + minIntervalNanos - System.nanoTime();
+        if (waitNanos > 0) {
+            try {
+                Thread.sleep(waitNanos / 1_000_000, (int) (waitNanos % 1_000_000));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        lastLlmCallNanos = System.nanoTime();
     }
 
     /**

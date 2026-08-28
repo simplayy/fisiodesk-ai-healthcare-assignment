@@ -97,14 +97,45 @@ public class QueryPlanningService {
         }
     }
 
+    /**
+     * Makes a real LLM call outside any request, result discarded. After a
+     * restart every plan may already be stored, so without this the first
+     * new question would also pay the one-off cost of opening the HTTPS
+     * connection and JIT-compiling the client path (measured at ~0.8 s on top
+     * of the model latency), enough to push it over the planning budget.
+     */
+    public void primeLlmClient(String question, int calls) {
+        if (!aiProperties.enabled()) {
+            return;
+        }
+        llmExecutor.submit(() -> {
+            for (int i = 0; i < calls; i++) {
+                long start = System.nanoTime();
+                try {
+                    llmPlanner.plan(question);
+                    log.info("LLM client primed ({}/{}) in {} ms", i + 1, calls, elapsedMs(start));
+                } catch (RuntimeException e) {
+                    log.warn("LLM client priming failed: {}", e.getMessage());
+                    return;
+                }
+            }
+        });
+    }
+
+    private static long elapsedMs(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000;
+    }
+
     private CompletableFuture<QueryPlan> llmPlanAsync(String key, String question) {
         return inFlight.computeIfAbsent(key, k -> {
+            long start = System.nanoTime();
             CompletableFuture<QueryPlan> future = CompletableFuture.supplyAsync(
                     () -> PlanGuardrail.merge(llmPlanner.plan(question), heuristicPlanner.plan(question)),
                     llmExecutor);
             future.whenComplete((plan, error) -> {
                 inFlight.remove(k);
                 if (plan != null) {
+                    log.info("LLM planned '{}' in {} ms", question, elapsedMs(start));
                     store(k, question, plan);
                 } else if (error != null) {
                     log.warn("LLM planning failed for '{}': {}", question, error.getMessage());

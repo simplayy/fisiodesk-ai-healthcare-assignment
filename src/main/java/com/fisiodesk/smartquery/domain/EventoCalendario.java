@@ -3,10 +3,13 @@ package com.fisiodesk.smartquery.domain;
 import java.time.Instant;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.CompoundIndex;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 @Document("eventi_calendario")
+// "Last appointment of a patient up to a date" must be an index seek, not a scan.
+@CompoundIndex(name = "paziente_data_idx", def = "{'paziente_id': 1, 'data': -1}")
 public class EventoCalendario {
 
     public static final String STATO_NO_SHOW = "no_show";

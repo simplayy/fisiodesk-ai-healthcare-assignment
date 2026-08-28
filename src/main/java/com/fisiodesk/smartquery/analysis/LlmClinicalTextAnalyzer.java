@@ -8,6 +8,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -50,14 +51,25 @@ public class LlmClinicalTextAnalyzer implements ClinicalTextAnalyzer {
     private final BeanOutputConverter<Extraction> converter = new BeanOutputConverter<>(Extraction.class);
     private final OpenAiChatOptions options;
 
-    public LlmClinicalTextAnalyzer(ChatClient chatClient) {
+    /**
+     * @param analysisModel optional model for note analysis. Background
+     *                      indexing and interactive planning then draw on
+     *                      separate provider quotas (rate limits are usually
+     *                      per model), so a large re-indexing can never slow
+     *                      down or starve the professionals' questions.
+     */
+    public LlmClinicalTextAnalyzer(ChatClient chatClient,
+                                   @Value("${smartquery.ai.analysis-model:}") String analysisModel) {
         this.chatClient = chatClient;
-        this.options = OpenAiChatOptions.builder()
+        OpenAiChatOptions.Builder builder = OpenAiChatOptions.builder()
                 .responseFormat(ResponseFormat.builder()
                         .type(ResponseFormat.Type.JSON_SCHEMA)
                         .jsonSchema(converter.getJsonSchema())
-                        .build())
-                .build();
+                        .build());
+        if (analysisModel != null && !analysisModel.isBlank()) {
+            builder.model(analysisModel.trim());
+        }
+        this.options = builder.build();
     }
 
     @Override

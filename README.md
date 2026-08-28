@@ -77,6 +77,17 @@ docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
 
 Modello di default `gemini-3.5-flash-lite`: pianifica una domanda nuova in ~0,8 s, quindi resta dentro il budget del planner (1,5 s) anche a freddo. Il codice è lo stesso della modalità Ollama, cambia solo la configurazione.
 
+Verifica del vincolo di latenza (server a 4 core condiviso con MongoDB e con il generatore di carico, `scripts/load-test.py`, cache delle risposte quasi sempre fredda, tutti i piani dall'LLM, nessun fallback a regole):
+
+| Scenario | Richieste | p50 | p95 | max |
+|---|---|---|---|---|
+| 60 utenti concorrenti | 300 | 158 ms | 391 ms | 599 ms |
+| 100 utenti concorrenti | 500 | 199 ms | 865 ms | 1296 ms |
+| 60 utenti, 1200 richieste sostenute | 1200 | 127 ms | 359 ms | 867 ms |
+| 10 domande *mai viste* nello stesso istante (planning LLM dentro la richiesta) | 10 | 1150 ms | 1350 ms | 1350 ms |
+
+Le quote Gemini sono per modello (piano gratuito: 15 richieste/min ciascuno). L'overlay quindi analizza le note con un secondo modello (`gemini-3.1-flash-lite`) ritmato a 12 chiamate/min: l'indicizzazione in background non consuma mai la quota del planner interattivo. Con il piano gratuito il planner LLM copre fino a 15 domande *nuove e distinte* al minuto (le domande già viste non costano chiamate); oltre serve il piano a pagamento del provider, non modifiche al codice.
+
 **Altri provider** (qualunque endpoint compatibile OpenAI, via Spring AI):
 
 ```bash
@@ -160,6 +171,7 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ├── docker-compose.ai.yml       # overlay opzionale: LLM locale via Ollama
 ├── docker-compose.gemini.yml   # overlay opzionale: LLM hosted via Gemini (chiave in .env)
 ├── Dockerfile                  # build multi-stage (Gradle -> JRE)
+├── scripts/                    # smoke-test.sh (query target), load-test.py (latenza sotto carico)
 ├── data/                       # dataset demo (marzo-dicembre 2024)
 ├── src/main/java/com/fisiodesk/smartquery/
 │   ├── analysis/               # lessico clinico, analizzatori, indexer batch
@@ -182,11 +194,15 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 | `AI_COMPLETIONS_PATH` | `/v1/chat/completions` | path delle chat completions, per provider con prefisso diverso (Gemini: `/chat/completions` su `.../v1beta/openai`) |
 | `AI_API_KEY` | `not-needed` | chiave del provider (ignorata da Ollama) |
 | `AI_MODEL` | `gpt-4o-mini` | modello (es. `qwen2.5:1.5b` con Ollama, `gemini-3.5-flash-lite` con Gemini) |
+| `AI_ANALYSIS_MODEL` | *(vuoto → `AI_MODEL`)* | modello separato per l'analisi delle note, per non condividere la quota con il planner |
+| `AI_INDEXER_RPM` | `0` (nessun ritmo) | massimo di chiamate LLM al minuto dell'indexer, da tenere sotto la quota del provider |
 | `GEMINI_API_KEY` | – | chiave Gemini, letta da `.env` dall'overlay `docker-compose.gemini.yml` |
 | `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
-| `AI_PLAN_TIMEOUT_MS` | `1500` | budget di attesa del planner LLM in una richiesta utente |
+| `AI_PLAN_TIMEOUT_MS` | `1500` (`1800` nell'overlay Gemini) | budget di attesa del planner LLM in una richiesta utente: obiettivo di risposta meno il tempo di esecuzione |
 
 ## Troubleshooting
+
+- **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
 
 - **`fisiodesk-mongodb` esce con `ReplicaSetNoPrimary` dopo un ricreate del container**: è un limite noto dell'immagine Atlas Local quando riusa un volume con una configurazione di replica set precedente. Reset: `docker compose down -v && docker compose up -d --build` (i dati demo vengono re-importati e ri-indicizzati automaticamente).
 - **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.

@@ -41,5 +41,8 @@ public class PlanWarmup {
         }
         log.info("Warming up plans for {} questions", questions.size());
         questions.forEach(planningService::warmUp);
+        // A few real calls: the first opens the connection and loads the
+        // client path, the next ones let the JIT settle on the path users hit.
+        planningService.primeLlmClient(questions.get(0), 3);
     }
 }

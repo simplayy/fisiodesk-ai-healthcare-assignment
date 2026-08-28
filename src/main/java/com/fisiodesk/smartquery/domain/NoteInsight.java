@@ -6,6 +6,7 @@ import java.util.Set;
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.CompoundIndex;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
@@ -17,6 +18,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
  * edited notes and re-analyze only those.
  */
 @Document("note_insights")
+// Query execution reads the window by date; the compound index serves per-patient timelines.
 @CompoundIndex(name = "paziente_data_idx", def = "{'paziente_id': 1, 'data': -1}")
 public class NoteInsight {
 
@@ -36,6 +38,7 @@ public class NoteInsight {
     @Field("professionista_id")
     private ObjectId professionistaId;
 
+    @Indexed(name = "data_idx")
     private Instant data;
 
     @Field("text_hash")
