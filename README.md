@@ -56,46 +56,28 @@ Nota sulle date: il dataset copre marzo–dicembre 2024, quindi come "oggi" vien
 
 ### Modalità AI (opzionale)
 
-Di default il sistema usa l'analizzatore deterministico (nessuna dipendenza esterna, risultati riproducibili). Per usare un LLM vero ci sono due strade:
-
-**LLM locale via Ollama** (nessuna API key, tutto on-premise):
+Di default il sistema usa l'analizzatore deterministico (nessuna dipendenza esterna, risultati riproducibili). Con un LLM l'analisi delle note e l'interpretazione della domanda passano al modello; il lessico resta come verifica e come fallback.
 
 ```bash
+# LLM locale via Ollama (nessuna chiave, ~1 GB di modello al primo avvio)
 docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
-```
 
-Il primo avvio scarica il modello (`qwen2.5:1.5b`, ~1 GB). L'indexer ri-analizza le note in background con l'LLM mantenendo il servizio disponibile; anche l'interpretazione della domanda passa all'LLM.
-
-Nota sulla latenza: su CPU il planning LLM di una domanda *nuova* costa qualche secondo, quindi la prima richiesta è servita dal parser a regole mentre il piano LLM viene completato e memorizzato in `query_plans`; da quel momento la domanda resta sotto i 100 ms. Il vincolo <2s per 50+ utenti concorrenti è garantito dal design (nessuna analisi di testo a runtime, solo letture indicizzate): l'unica parte variabile è la singola chiamata di planning, che in produzione userebbe un modello hosted (~300-500 ms) o il parser a regole.
-
-**LLM hosted via Google Gemini** (endpoint OpenAI-compatibile, nessun modello da scaricare):
-
-```bash
-cp .env.example .env    # e inserire GEMINI_API_KEY
+# LLM hosted via Google Gemini (chiave in .env, vedi .env.example)
 docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
+
+# Qualunque endpoint OpenAI-compatibile
+AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
 ```
 
-Modello di default `gemini-3.5-flash-lite`: pianifica una domanda nuova in ~0,8 s, quindi resta dentro il budget del planner (1,8 s nell'overlay) anche a freddo. Il codice è lo stesso della modalità Ollama, cambia solo la configurazione.
+L'output del modello è vincolato a uno schema JSON; le chiamate hanno timeout e retry; se l'LLM non risponde il sistema degrada sull'analizzatore deterministico e non si ferma mai. Dettagli su modelli, quote e latenza in [docs/DESIGN.md](docs/DESIGN.md).
 
-Verifica del vincolo di latenza (server a 4 core condiviso con MongoDB e con il generatore di carico, `scripts/load-test.py`, cache delle risposte quasi sempre fredda, tutti i piani dall'LLM, nessun fallback a regole):
+Vincolo di latenza, misurato con `scripts/load-test.py` (Gemini, cache delle risposte fredda, tutti i piani dall'LLM, server a 4 core condiviso con MongoDB e col generatore di carico):
 
 | Scenario | Richieste | p50 | p95 | max |
 |---|---|---|---|---|
 | 60 utenti concorrenti | 300 | 158 ms | 391 ms | 599 ms |
 | 100 utenti concorrenti | 500 | 199 ms | 865 ms | 1296 ms |
-| 60 utenti, 1200 richieste sostenute | 1200 | 127 ms | 359 ms | 867 ms |
-| 10 domande *mai viste* nello stesso istante (planning LLM dentro la richiesta) | 10 | 1150 ms | 1350 ms | 1350 ms |
-
-Le quote Gemini sono per modello (piano gratuito: 15 richieste/min ciascuno). L'overlay quindi analizza le note con un secondo modello (`gemini-3.1-flash-lite`) ritmato a 12 chiamate/min: l'indicizzazione in background non consuma mai la quota del planner interattivo. Con il piano gratuito il planner LLM copre fino a 15 domande *nuove e distinte* al minuto (le domande già viste non costano chiamate); oltre serve il piano a pagamento del provider, non modifiche al codice.
-
-**Altri provider** (qualunque endpoint compatibile OpenAI, via Spring AI):
-
-```bash
-AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
-# altri endpoint: AI_BASE_URL=https://openrouter.ai/api  (senza /v1)
-```
-
-In tutti i casi l'output del modello è vincolato a uno schema JSON (structured output), le chiamate hanno timeout e retry configurati (`spring.ai.retry.*`, `spring.http.client.*`) e, se l'LLM non risponde, il sistema degrada automaticamente sull'analizzatore deterministico: il servizio non si ferma mai per un problema del provider AI.
+| 10 domande mai viste nello stesso istante (planning LLM nella richiesta) | 10 | 1150 ms | 1350 ms | 1350 ms |
 
 ---
 
@@ -158,11 +140,9 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 
 ## Trade-off principali
 
-- **Pre-calcolo batch invece di AI a runtime** — la query resta sotto i 100 ms e il costo AI è per-nota invece che per-query; in cambio una nota nuova diventa cercabile al ciclo di indicizzazione successivo (default 30s), non istantaneamente. Per un gestionale clinico è un compromesso accettabile; in produzione il trigger diventerebbe un evento sul salvataggio della nota (change stream / coda).
-- **Budget di latenza sul planner invece di attendere sempre l'LLM** — la prima richiesta di una domanda mai vista può essere interpretata dal parser a regole (più grezzo) se l'LLM è lento; in cambio il tempo di risposta è garantito e il piano LLM viene riusato da tutte le richieste successive. Il piano usato è sempre esposto nella risposta, quindi l'utente vede come è stata interpretata la domanda.
-- **LLM piccolo e locale + guardrail lessicale, invece di un modello grande** — un modello da 1.5B su CPU gira su qualunque macchina e tiene i testi clinici in casa, ma sbaglia ~1 domanda su 3 su marcatori espliciti ("guariti", negazioni); la fusione con il parser a regole recupera esattamente quei casi. Con un modello hosted (o Qwen3 8B su GPU) il guardrail resta innocuo e il modello fa più lavoro da solo.
-- **Classificazione a punteggio su lessico + LLM opzionale invece di embeddings/vector search** — per la query target servono segnali *direzionali* (migliora / non migliora) e di *area anatomica*, che un classificatore per nota cattura in modo spiegabile (ogni risultato mostra i termini che l'hanno motivato — importante per decisioni cliniche). La vector search di MongoDB Atlas diventa utile al crescere del corpus e delle query aperte ("pazienti simili a…"), e si innesta nella stessa pipeline: stessi documenti `note_insights`, in più un embedding per nota.
-- **Aggregazione in application-layer invece di pipeline Mongo monolitica** — con collections separate la correlazione insights↔calendario↔anagrafica è fatta nel service con query indicizzate mirate: più leggibile e testabile di un unico `$lookup` a tre stadi, a costo di qualche round-trip in più (irrilevante a questi volumi; con dataset molto più grandi il candidato naturale è una `$lookup` singola o una vista materializzata per professionista).
+- **AI in fase di scrittura, non di lettura.** Ogni nota è analizzata una volta e il risultato è indicizzato; la query è solo letture Mongo. Costo proporzionale alle note, non alle ricerche; latenza sotto i 100 ms. In cambio una nota nuova è cercabile al ciclo successivo (30 s), non nell'istante.
+- **Budget di latenza sul planner, con fallback a regole.** La domanda è tradotta in un piano dall'LLM entro un budget; oltre, risponde il parser a regole e il piano LLM viene memorizzato per la volta dopo. Tempo di risposta garantito; la prima richiesta di una domanda nuova può essere interpretata in modo più grezzo, e la risposta lo dichiara.
+- **Lessico clinico + LLM invece di embeddings.** Per la query target servono segnali direzionali (migliora / non migliora) e di area anatomica: un classificatore per nota li cattura in modo spiegabile e il lessico corregge le negazioni che i modelli piccoli sbagliano. La vector search resta il passo successivo per le domande aperte.
 
 ## Struttura del progetto
 
@@ -203,7 +183,7 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ## Troubleshooting
 
 - **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
-- **`fisiodesk-mongodb` esce con `ReplicaSetNoPrimary` dopo un ricreate del container**: è un limite noto dell'immagine Atlas Local quando riusa un volume con una configurazione di replica set precedente. Reset: `docker compose down -v && docker compose up -d --build` (i dati demo vengono re-importati e ri-indicizzati automaticamente).
+- **Ripartire da zero**: `docker compose down -v && docker compose up -d --build` (dati demo re-importati e ri-indicizzati automaticamente).
 - **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
 - **Modalità AI locale lenta al primo avvio**: il download del modello è visibile con `docker logs fisiodesk-ollama-pull`; la prima analisi delle note su CPU richiede qualche minuto (`/api/stats` mostra `analyzedByLlm` crescere), nel frattempo le query rispondono con le analisi deterministiche.
 
@@ -243,4 +223,4 @@ Risposta: piano interpretato (trasparenza su come è stata capita la domanda), r
 - [Spring AI 1.1 – OpenAI chat e structured outputs](https://docs.spring.io/spring-ai/reference/1.1/api/chat/openai-chat.html) · [ChatClient](https://docs.spring.io/spring-ai/reference/1.1/api/chatclient.html)
 - [Spring AI 2.0 / Spring Boot 4 – perché qui resta la linea 1.1](https://www.herodevs.com/blog-posts/spring-ai-2-0-is-coming-soon-your-boot-4-0-migration-does-not-have-to-start-tomorrow)
 - [Ollama – structured outputs](https://docs.spring.io/spring-ai/reference/api/chat/ollama-chat.html)
-- [MongoDB Atlas Local](https://www.mongodb.com/docs/atlas/cli/current/atlas-cli-deploy-docker/)
+- [Immagine Docker ufficiale di MongoDB](https://hub.docker.com/_/mongo)

@@ -71,6 +71,12 @@ Un risultato clinico non deve essere opaco. La risposta porta con sé il traccia
 - **Guasti**: timeout, un retry, fallback deterministico per chiamata, upgrade automatico (una tantum) delle note analizzate col fallback quando l'LLM torna su. Nessun circuito manuale da riarmare.
 - **Scelta del modello locale**: `qwen2.5:1.5b` per girare su CPU e 8 GB di RAM insieme a MongoDB; la famiglia Qwen è tra le più solide in italiano. Con più risorse (GPU) il candidato naturale è Qwen3 8B: basta cambiare `AI_MODEL`.
 
+## Altri trade-off
+
+- **LLM piccolo e locale + guardrail lessicale, invece di un modello grande.** Un modello da 1.5B su CPU gira ovunque e tiene i testi clinici in casa, ma sbaglia ~1 domanda su 3 sui marcatori espliciti ("guariti", negazioni); la fusione col parser a regole recupera esattamente quei casi. Con un modello hosted il guardrail è neutro.
+- **Correlazione nel service invece di una `$lookup` a tre stadi.** Query indicizzate mirate su insights, calendario e anagrafica: più leggibile e testabile, qualche round-trip in più (irrilevante a questi volumi; con volumi reali il candidato è una `$lookup` singola o una vista per professionista).
+- **Provider Gemini nell'overlay**: modello per il planner e modello separato per l'analisi delle note perché le quote del provider sono per modello; indexer ritmato sotto la quota (`AI_INDEXER_RPM`); budget del planner 1,8 s. Sul piano gratuito (15 richieste/min per modello) il planner copre 15 domande nuove al minuto; oltre serve il piano a pagamento, non codice.
+
 ## Percorso di crescita (non implementato, per la call)
 
 - **Freshness**: sostituire il polling a 30s con MongoDB change streams sulle collections sorgente.

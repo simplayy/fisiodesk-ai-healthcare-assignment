@@ -1,41 +1,36 @@
 services:
   mongodb:
-    image: mongodb/mongodb-atlas-local:8.0
+    image: mongo:8.0
     container_name: fisiodesk-mongodb
     ports:
       # Bound to localhost: the database must not be reachable from outside the host.
       - "127.0.0.1:27017:27017"
-    environment:
-      MONGO_INITDB_DATABASE: fisiodesk
     volumes:
-      - mongodb_data:/data/db
-      - mongodb_config:/data/configdb
-      - mongodb_mongot:/data/mongot
+      - mongo_data:/data/db
     healthcheck:
-      # Atlas Local runs as a single-node replica set: right after start the
-      # node is still SECONDARY, so wait for it to become writable, not just up.
-      test: ["CMD", "mongosh", "--quiet", "--eval", "if (!db.hello().isWritablePrimary) quit(1)"]
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ ping: 1 }).ok || quit(1)"]
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 15s
+      start_period: 10s
     networks:
       - fisiodesk-network
 
-  # Imports the sample dataset once MongoDB is reachable.
+  # Imports the sample dataset once MongoDB is reachable (idempotent upserts by _id).
   mongodb-seed:
-    image: mongodb/mongodb-atlas-local:8.0
+    image: mongo:8.0
     container_name: fisiodesk-mongodb-seed
     volumes:
-      - ./data:/data
-    command: >
-      bash -c "
-        mongoimport --host mongodb --db fisiodesk --collection pazienti --file /data/pazienti.json --jsonArray --mode upsert &&
-        mongoimport --host mongodb --db fisiodesk --collection schede_valutazione --file /data/schede_valutazione.json --jsonArray --mode upsert &&
-        mongoimport --host mongodb --db fisiodesk --collection diario_trattamenti --file /data/diario_trattamenti.json --jsonArray --mode upsert &&
-        mongoimport --host mongodb --db fisiodesk --collection eventi_calendario --file /data/eventi_calendario.json --jsonArray --mode upsert &&
-        echo 'Dati importati con successo'
-      "
+      - ./data:/data:ro
+    entrypoint: ["mongosh", "--quiet", "--host", "mongodb", "fisiodesk", "--eval"]
+    command:
+      - |
+        const fs = require("fs");
+        for (const c of ["pazienti", "schede_valutazione", "diario_trattamenti", "eventi_calendario"]) {
+          const docs = EJSON.parse(fs.readFileSync("/data/" + c + ".json", "utf8"));
+          const r = db[c].bulkWrite(docs.map(d => ({ replaceOne: { filter: { _id: d._id }, replacement: d, upsert: true } })));
+          print(c + ": " + docs.length + " documenti (" + r.upsertedCount + " nuovi)");
+        }
     depends_on:
       mongodb:
         condition: service_healthy
@@ -85,9 +80,7 @@ services:
       - fisiodesk-network
 
 volumes:
-  mongodb_data:
-  mongodb_config:
-  mongodb_mongot:
+  mongo_data:
 
 networks:
   fisiodesk-network:
