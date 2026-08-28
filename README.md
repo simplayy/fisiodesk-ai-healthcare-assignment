@@ -68,14 +68,23 @@ Il primo avvio scarica il modello (`qwen2.5:1.5b`, ~1 GB). L'indexer ri-analizza
 
 Nota sulla latenza: su CPU il planning LLM di una domanda *nuova* costa qualche secondo; i piani sono cachati 30 minuti, quindi le domande ricorrenti restano sotto i 100 ms. Il vincolo <2s per 50+ utenti concorrenti è garantito dal design (nessuna analisi di testo a runtime, solo letture indicizzate): l'unica parte variabile è la singola chiamata di planning, che in produzione userebbe un modello hosted (~300-500 ms) o il parser a regole.
 
-**Provider esterno** (qualunque endpoint compatibile OpenAI, via Spring AI):
+**LLM hosted via Google Gemini** (endpoint OpenAI-compatibile, nessun modello da scaricare):
+
+```bash
+cp .env.example .env    # e inserire GEMINI_API_KEY
+docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
+```
+
+Modello di default `gemini-3.5-flash-lite`: pianifica una domanda nuova in ~0,8 s, quindi resta dentro il budget del planner (1,5 s) anche a freddo. Il codice è lo stesso della modalità Ollama, cambia solo la configurazione.
+
+**Altri provider** (qualunque endpoint compatibile OpenAI, via Spring AI):
 
 ```bash
 AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
 # altri endpoint: AI_BASE_URL=https://openrouter.ai/api  (senza /v1)
 ```
 
-In entrambi i casi l'output del modello è vincolato a uno schema JSON (structured output), le chiamate hanno timeout e retry configurati (`spring.ai.retry.*`, `spring.http.client.*`) e, se l'LLM non risponde, il sistema degrada automaticamente sull'analizzatore deterministico: il servizio non si ferma mai per un problema del provider AI.
+In tutti i casi l'output del modello è vincolato a uno schema JSON (structured output), le chiamate hanno timeout e retry configurati (`spring.ai.retry.*`, `spring.http.client.*`) e, se l'LLM non risponde, il sistema degrada automaticamente sull'analizzatore deterministico: il servizio non si ferma mai per un problema del provider AI.
 
 ---
 
@@ -104,7 +113,7 @@ flowchart LR
         QPL[(query_plans<br/>piani memorizzati)]
     end
 
-    LLM[LLM via Spring AI<br/>Ollama locale o endpoint OpenAI-compatibile]
+    LLM[LLM via Spring AI<br/>Ollama locale, Gemini o altro endpoint OpenAI-compatibile]
 
     UI -->|POST /api/query| QP --> EX
     QP <--> QPL
@@ -149,6 +158,7 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ```
 ├── docker-compose.yml          # MongoDB + seed dati + app + Mongo Express
 ├── docker-compose.ai.yml       # overlay opzionale: LLM locale via Ollama
+├── docker-compose.gemini.yml   # overlay opzionale: LLM hosted via Gemini (chiave in .env)
 ├── Dockerfile                  # build multi-stage (Gradle -> JRE)
 ├── data/                       # dataset demo (marzo-dicembre 2024)
 ├── src/main/java/com/fisiodesk/smartquery/
@@ -169,8 +179,10 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 | `REFERENCE_DATE` | *(vuoto → ultimo evento in calendario)* | "oggi" per le finestre relative, `yyyy-MM-dd` |
 | `AI_ENABLED` | `false` | `true` per usare l'LLM (planner + analisi note) |
 | `AI_BASE_URL` | `https://api.openai.com` | endpoint OpenAI-compatibile, senza `/v1` (es. `http://ollama:11434`) |
+| `AI_COMPLETIONS_PATH` | `/v1/chat/completions` | path delle chat completions, per provider con prefisso diverso (Gemini: `/chat/completions` su `.../v1beta/openai`) |
 | `AI_API_KEY` | `not-needed` | chiave del provider (ignorata da Ollama) |
-| `AI_MODEL` | `gpt-4o-mini` | modello (es. `qwen2.5:1.5b` con Ollama) |
+| `AI_MODEL` | `gpt-4o-mini` | modello (es. `qwen2.5:1.5b` con Ollama, `gemini-3.5-flash-lite` con Gemini) |
+| `GEMINI_API_KEY` | – | chiave Gemini, letta da `.env` dall'overlay `docker-compose.gemini.yml` |
 | `AI_TIMEOUT_MS` | `20000` | timeout di lettura di una chiamata LLM |
 | `AI_PLAN_TIMEOUT_MS` | `1500` | budget di attesa del planner LLM in una richiesta utente |
 

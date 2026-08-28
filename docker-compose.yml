@@ -54,6 +54,7 @@ services:
       # Leave AI_ENABLED=false to run fully on the deterministic analyzer.
       AI_ENABLED: ${AI_ENABLED:-false}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com}
+      AI_COMPLETIONS_PATH: ${AI_COMPLETIONS_PATH:-/v1/chat/completions}
       AI_API_KEY: ${AI_API_KEY:-not-needed}
       AI_MODEL: ${AI_MODEL:-gpt-4o-mini}
       # Fixed "today" for the 2024 demo dataset; remove in a live system.

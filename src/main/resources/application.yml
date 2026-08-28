@@ -11,6 +11,9 @@ spring:
       api-key: ${AI_API_KEY:not-needed}
       base-url: ${AI_BASE_URL:https://api.openai.com}
       chat:
+        # Providers that expose the OpenAI protocol under a different prefix
+        # (e.g. Gemini: base-url .../v1beta/openai, path /chat/completions).
+        completions-path: ${AI_COMPLETIONS_PATH:/v1/chat/completions}
         options:
           model: ${AI_MODEL:gpt-4o-mini}
           temperature: 0
