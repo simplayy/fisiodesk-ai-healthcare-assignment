@@ -33,7 +33,7 @@ Un documento per nota clinica analizzata:
 }
 ```
 
-Indice composto `(paziente_id, data)`; la query tipica filtra per finestra temporale e area e raggruppa per paziente. Con volumi reali si aggiunge il filtro `professionista_id` allo stesso indice (i dati sono già denormalizzati per farlo).
+Indici creati all'avvio: `data` (la query filtra per finestra temporale e poi per area in memoria), `(paziente_id, data)` e `(professionista_id, data)` per la vista scoped; su `eventi_calendario` un indice `(paziente_id, data)` rende la ricerca dell'ultimo appuntamento un seek e non una scansione.
 
 ## Semantica delle condizioni
 
@@ -75,5 +75,4 @@ Un risultato clinico non deve essere opaco. La risposta porta con sé il traccia
 
 - **Freshness**: sostituire il polling a 30s con MongoDB change streams sulle collections sorgente.
 - **Vector search**: aggiungere un embedding per nota in `note_insights` e usare l'indice vettoriale di Atlas per query aperte ("pazienti con quadro simile a…"); la struttura non cambia.
-- **Multi-tenancy**: filtro `professionista_id` in tutte le query + indici dedicati; già predisposto nei dati denormalizzati.
 - **Valutazione qualità**: golden set di note etichettate dai clinici, confronto periodico analizzatore vs LLM vs umano prima di allargare i casi d'uso.

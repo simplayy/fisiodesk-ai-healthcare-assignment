@@ -96,8 +96,4 @@ public class LlmQueryPlanner implements QueryPlanner {
                 window, extraction.missedLastAppointment(), NAME);
     }
 
-    @Override
-    public String name() {
-        return NAME;
-    }
 }

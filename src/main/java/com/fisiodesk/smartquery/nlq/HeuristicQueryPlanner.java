@@ -130,9 +130,5 @@ public class HeuristicQueryPlanner implements QueryPlanner {
         return null;
     }
 
-    @Override
-    public String name() {
-        return NAME;
-    }
 
 }

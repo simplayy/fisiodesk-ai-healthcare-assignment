@@ -255,7 +255,7 @@
       .then(function (res) { return res.json(); })
       .then(function (s) {
         footerEl.textContent = s.notesIndexed + " note cliniche indicizzate · " +
-          (s.aiEnabled ? "analisi con AI (" + s.aiModel + "), " + s.analyzedByLlm + " note" : "analisi a regole") +
+          (s.aiEnabled ? "analisi con AI (" + s.aiAnalysisModel + "), " + s.analyzedByLlm + " note" : "analisi a regole") +
           (s.analyzedByHeuristic ? ", " + s.analyzedByHeuristic + " in attesa dell'AI" : "");
       })
       .catch(function () { footerEl.textContent = "servizio non raggiungibile"; });

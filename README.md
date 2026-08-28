@@ -12,7 +12,7 @@ e ottiene in meno di 100 ms la lista dei pazienti corrispondenti, con le evidenz
 
 ## Avvio rapido
 
-Prerequisiti: Docker + Docker Compose.
+Prerequisiti: Docker con Compose v2 e BuildKit (qualsiasi Docker Desktop o Docker Engine recente).
 
 ```bash
 git clone <repository-url>
@@ -30,7 +30,7 @@ Servizi disponibili:
 | MongoDB | `localhost:27017` |
 | Mongo Express | http://localhost:8081 |
 
-Al primo avvio l'applicazione indicizza le note cliniche (qualche secondo in modalità deterministica); lo stato è visibile su `/api/stats` e nell'header della UI.
+Al primo avvio l'applicazione indicizza le note cliniche (qualche secondo in modalità deterministica); lo stato è visibile su `/api/stats` e nel piè di pagina della UI.
 
 ### Demo della query target
 
@@ -54,7 +54,7 @@ Chi ha saltato l'ultimo appuntamento?                                       -> t
 
 Nota sulle date: il dataset copre marzo–dicembre 2024, quindi come "oggi" viene usata la data dell'ultimo evento in calendario (31/12/2024). È sovrascrivibile con la variabile `REFERENCE_DATE` o col campo `referenceDate` della richiesta.
 
-### Modalità AI con LLM locale (opzionale)
+### Modalità AI (opzionale)
 
 Di default il sistema usa l'analizzatore deterministico (nessuna dipendenza esterna, risultati riproducibili). Per usare un LLM vero ci sono due strade:
 
@@ -66,7 +66,7 @@ docker compose -f docker-compose.yml -f docker-compose.ai.yml up -d --build
 
 Il primo avvio scarica il modello (`qwen2.5:1.5b`, ~1 GB). L'indexer ri-analizza le note in background con l'LLM mantenendo il servizio disponibile; anche l'interpretazione della domanda passa all'LLM.
 
-Nota sulla latenza: su CPU il planning LLM di una domanda *nuova* costa qualche secondo; i piani sono cachati 30 minuti, quindi le domande ricorrenti restano sotto i 100 ms. Il vincolo <2s per 50+ utenti concorrenti è garantito dal design (nessuna analisi di testo a runtime, solo letture indicizzate): l'unica parte variabile è la singola chiamata di planning, che in produzione userebbe un modello hosted (~300-500 ms) o il parser a regole.
+Nota sulla latenza: su CPU il planning LLM di una domanda *nuova* costa qualche secondo, quindi la prima richiesta è servita dal parser a regole mentre il piano LLM viene completato e memorizzato in `query_plans`; da quel momento la domanda resta sotto i 100 ms. Il vincolo <2s per 50+ utenti concorrenti è garantito dal design (nessuna analisi di testo a runtime, solo letture indicizzate): l'unica parte variabile è la singola chiamata di planning, che in produzione userebbe un modello hosted (~300-500 ms) o il parser a regole.
 
 **LLM hosted via Google Gemini** (endpoint OpenAI-compatibile, nessun modello da scaricare):
 
@@ -75,7 +75,7 @@ cp .env.example .env    # e inserire GEMINI_API_KEY
 docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
 ```
 
-Modello di default `gemini-3.5-flash-lite`: pianifica una domanda nuova in ~0,8 s, quindi resta dentro il budget del planner (1,5 s) anche a freddo. Il codice è lo stesso della modalità Ollama, cambia solo la configurazione.
+Modello di default `gemini-3.5-flash-lite`: pianifica una domanda nuova in ~0,8 s, quindi resta dentro il budget del planner (1,8 s nell'overlay) anche a freddo. Il codice è lo stesso della modalità Ollama, cambia solo la configurazione.
 
 Verifica del vincolo di latenza (server a 4 core condiviso con MongoDB e con il generatore di carico, `scripts/load-test.py`, cache delle risposte quasi sempre fredda, tutti i piani dall'LLM, nessun fallback a regole):
 
@@ -203,7 +203,6 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ## Troubleshooting
 
 - **Domande nuove servite dal piano a regole (`planner: heuristic`)**: il planner LLM ha superato il budget (`AI_PLAN_TIMEOUT_MS`) o il provider ha risposto 429; il log riporta la durata di ogni chiamata (`LLM planned '...' in N ms`) e gli errori del provider. Sul piano gratuito Gemini il limite è 15 domande nuove/min per modello.
-
 - **`fisiodesk-mongodb` esce con `ReplicaSetNoPrimary` dopo un ricreate del container**: è un limite noto dell'immagine Atlas Local quando riusa un volume con una configurazione di replica set precedente. Reset: `docker compose down -v && docker compose up -d --build` (i dati demo vengono re-importati e ri-indicizzati automaticamente).
 - **Stato dell'indicizzazione**: `curl localhost:8080/api/stats`; log applicativi: `docker logs fisiodesk-smart-query`.
 - **Modalità AI locale lenta al primo avvio**: il download del modello è visibile con `docker logs fisiodesk-ollama-pull`; la prima analisi delle note su CPU richiede qualche minuto (`/api/stats` mostra `analyzedByLlm` crescere), nel frattempo le query rispondono con le analisi deterministiche.
@@ -233,7 +232,7 @@ Risposta: piano interpretato (trasparenza su come è stata capita la domanda), r
 
 **Spiegazione del risultato (`explain`).** Ogni risposta racconta come è stata prodotta, a partire da ciò che la pipeline ha fatto davvero e senza chiamate AI aggiuntive: origine del piano (AI in questa richiesta, piano memorizzato, parser a regole per timeout/AI assente), parole della domanda riconosciute dal lessico e come sono state lette (`"dolore lombare" → LUMBAR`), tempi per tappa (interpretazione, ricerca note, valutazione pazienti, totale) con i conteggi (note nella finestra, note sull'area, pazienti coinvolti), da dove viene la data di riferimento, e **ogni paziente con note nel periodo che è stato escluso, con il motivo** ("nessun miglioramento nell'area richiesta (punteggio -4 su 2 note)", "ultimo appuntamento completato il 20/12/2024, non saltato", "nessuna nota sull'area richiesta"). La UI lo apre in un popup dal link "Come è nato il risultato" accanto al conteggio, ed evidenzia nelle note i termini che hanno pesato. Link diretto a una domanda: `/?q=<domanda>&professionista=<id>&spiega=1`.
 
-`DELETE /api/cache` — svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non sono una cache e non vengono toccate.
+`DELETE /api/cache` — svuota le risposte in cache (60 s) e i piani memorizzati: la domanda successiva ripassa dall'AI (link "Svuota cache" nella barra in alto della UI, accanto al selettore del professionista). Le analisi delle note non sono una cache e non vengono toccate. Endpoint di servizio per la demo, senza autenticazione come il resto dell'API.
 
 **Scoping per professionista.** Con `professionistaId` la ricerca considera solo le note scritte da quel professionista: ognuno vede i propri pazienti (sul dataset: `…9021` → Rossi, Bianchi, Romano; `…9023` → Colombo; `…9022` → nessuno per la query target). Senza, la vista è amministrativa. In produzione l'id arriva dal token dell'utente autenticato, non dal body: qui è esplicito per la demo e la UI offre un selettore.
 

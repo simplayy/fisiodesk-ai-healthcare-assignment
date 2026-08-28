@@ -26,8 +26,4 @@ public record QueryPlan(
 
     public static final int DEFAULT_WINDOW_MONTHS = 3;
 
-    public QueryPlan withPlanner(String plannerName) {
-        return new QueryPlan(bodyAreas, requireImprovement, requireWorsening,
-                windowMonths, missedLastAppointment, plannerName);
-    }
 }

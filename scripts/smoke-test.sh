@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check of the running stack: waits for the API, runs the target
-# query and verifies the expected patients are returned.
+# query and verifies the expected patients, the explain block and the
+# per-professional scoping.
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:8080}"
