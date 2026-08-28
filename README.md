@@ -33,7 +33,9 @@ Dopo circa un minuto (la prima volta di più, per scaricare le dipendenze):
 - http://localhost:8080 interfaccia web e API
 - http://localhost:8081 Mongo Express, per sfogliare i dati
 
-All'avvio il database viene riempito con i dati di esempio e le note vengono lette e indicizzate. Di default non serve nessuna chiave: i testi vengono letti con un dizionario di termini fisioterapici invece che con un'AI (vedi la sezione 6 per attivarla).
+All'avvio il database viene riempito con i dati di esempio e le note vengono lette e indicizzate.
+
+Questo comando funziona **senza nessuna chiave API**, così puoi provare il sistema subito: al posto dell'AI i testi vengono letti da un dizionario di termini fisioterapici. Con una chiave (o con un modello in locale) le note le legge un'AI vera: è la sezione 5, ed è il funzionamento normale del sistema.
 
 ## 3. Provalo: la query target
 
@@ -94,13 +96,16 @@ Ogni nota viene letta una volta sola; dopo, il risultato è già lì.
 
 **Se l'AI non funziona** (non risponde, dà errore, la quota è finita): al suo posto lavora il dizionario di termini, sia per leggere le note sia per capire le domande. Il sistema risponde comunque, solo in modo un po' meno fine, e nella risposta si vede chi dei due ha lavorato. Quando l'AI torna, le note lette col dizionario vengono rilette dall'AI.
 
-## 5. Le scelte principali (trade-off)
+## 5. L'AI: dove lavora e come attivarla
 
-- **L'AI legge le note prima, non durante la ricerca.** Il costo dipende da quante note vengono scritte, non da quante ricerche vengono fatte, e la ricerca resta sotto i 100 ms. In cambio una nota appena scritta diventa cercabile dopo al massimo 30 secondi, non subito.
-- **Limite di tempo sull'AI.** Una domanda nuova aspetta l'AI al massimo 1,5 secondi; se tarda, risponde il dizionario di termini e il filtro dell'AI viene salvato per la volta dopo. Così il tempo di risposta è sempre sotto controllo, ma la prima risposta a una domanda mai vista può essere meno precisa.
-- **Dizionario di termini + AI invece di ricerca vettoriale (embedding).** Per questa query servono due informazioni per nota, la parte del corpo e se il paziente migliora: chiederle esplicitamente all'AI dà un risultato che si può spiegare, e il dizionario corregge le negazioni che i modelli piccoli sbagliano. La ricerca vettoriale servirebbe per domande aperte, che qui non ci sono.
+L'AI è il motore del sistema e lavora in due punti, tutti e due fuori dal momento della ricerca:
 
-## 6. Attivare l'AI (opzionale)
+1. **Legge le note cliniche** quando vengono indicizzate, e ne ricava parte del corpo e punteggio di miglioramento.
+2. **Interpreta le domande** in italiano e le trasforma nel filtro, la prima volta che una domanda viene fatta.
+
+Il dizionario di termini non è un'alternativa all'AI: è la **rete di sicurezza**. La consegna chiede "cosa succede se l'AI non funziona", e la risposta è che il dizionario prende il suo posto e il sistema continua a rispondere. Serve anche come controllo: sulle domande, quello che il dizionario riconosce con certezza (per esempio la parola "lombare") viene rimesso nel filtro dell'AI, perché i modelli piccoli ogni tanto perdono per strada un pezzo della domanda.
+
+Il comando della sezione 2 parte con il solo dizionario, così chiunque può provare il sistema senza avere una chiave API (la consegna lo permette esplicitamente: *"AI Provider: puoi usare OpenAI, Anthropic, o mock intelligente"*). Per far lavorare l'AI vera basta uno di questi comandi:
 
 ```bash
 # AI locale con Ollama: nessuna chiave, scarica circa 1 GB di modello
@@ -113,7 +118,15 @@ docker compose -f docker-compose.yml -f docker-compose.gemini.yml up -d --build
 AI_ENABLED=true AI_API_KEY=sk-... AI_MODEL=gpt-4o-mini docker compose up -d
 ```
 
-Con l'AI attiva le note vengono rilette dal modello e le domande nuove interpretate dal modello; il dizionario resta come controllo e come riserva. Con Gemini il limite dei 2 secondi regge con 100 utenti che cercano insieme (misure in [docs/DESIGN.md](docs/DESIGN.md)).
+Da quel momento le note vengono rilette dal modello (`GET /api/stats` mostra quante ne ha già fatte) e le domande nuove le interpreta lui. In ogni risposta, il link "Come è nato il risultato" dice chi ha lavorato su quella richiesta: l'AI, un filtro già salvato, o il dizionario.
+
+Con Gemini il limite dei 2 secondi regge con 100 utenti che cercano insieme (misure in [docs/DESIGN.md](docs/DESIGN.md)).
+
+## 6. Le scelte principali (trade-off)
+
+- **L'AI legge le note prima, non durante la ricerca.** Il costo dipende da quante note vengono scritte, non da quante ricerche vengono fatte, e la ricerca resta sotto i 100 ms. In cambio una nota appena scritta diventa cercabile dopo al massimo 30 secondi, non subito.
+- **Limite di tempo sull'AI.** Una domanda nuova aspetta l'AI al massimo 1,5 secondi; se tarda, risponde il dizionario di termini e il filtro dell'AI viene salvato per la volta dopo. Così il tempo di risposta è sempre sotto controllo, ma la prima risposta a una domanda mai vista può essere meno precisa.
+- **Dizionario di termini + AI invece di ricerca vettoriale (embedding).** Per questa query servono due informazioni per nota, la parte del corpo e se il paziente migliora: chiederle esplicitamente all'AI dà un risultato che si può spiegare, e il dizionario corregge le negazioni che i modelli piccoli sbagliano. La ricerca vettoriale servirebbe per domande aperte, che qui non ci sono.
 
 ## 7. Cosa c'è nel repository
 
