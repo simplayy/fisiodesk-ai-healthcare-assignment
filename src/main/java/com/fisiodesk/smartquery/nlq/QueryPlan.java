@@ -4,10 +4,8 @@ import com.fisiodesk.smartquery.analysis.BodyArea;
 import java.util.Set;
 
 /**
- * Structured representation of a natural-language question. The NL query is
- * translated into this plan once (LLM or heuristic parser), then executed
- * with plain MongoDB queries over pre-computed insights: the expensive and
- * fuzzy part stays out of the hot path.
+ * Structured form of a question, computed once (LLM or rules) and executed
+ * with plain MongoDB queries.
  *
  * @param bodyAreas              anatomical areas to filter on (empty = any)
  * @param requireImprovement     true when the question asks for improving patients
@@ -25,5 +23,4 @@ public record QueryPlan(
         String planner) {
 
     public static final int DEFAULT_WINDOW_MONTHS = 3;
-
 }

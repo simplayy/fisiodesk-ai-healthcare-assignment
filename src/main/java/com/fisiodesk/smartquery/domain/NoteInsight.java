@@ -11,14 +11,10 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
 /**
- * Pre-computed analysis of a single clinical note. This is the core of the
- * "index, don't re-analyze" strategy: every free-text note is analyzed once
- * (heuristic or LLM), the outcome is persisted here and queries only touch
- * this collection plus the calendar. The text hash lets the indexer detect
- * edited notes and re-analyze only those.
+ * Analysis of one clinical note, computed once at indexing time. Queries read
+ * this collection instead of the note text; the text hash detects edited notes.
  */
 @Document("note_insights")
-// Query execution reads the window by date; the compound index serves per-patient timelines.
 @CompoundIndex(name = "paziente_data_idx", def = "{'paziente_id': 1, 'data': -1}")
 @CompoundIndex(name = "professionista_data_idx", def = "{'professionista_id': 1, 'data': -1}")
 public class NoteInsight {

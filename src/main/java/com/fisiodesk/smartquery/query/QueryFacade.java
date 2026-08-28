@@ -25,11 +25,7 @@ import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-/**
- * Entry point for the API layer: resolves the reference date, plans the
- * question, executes the plan and serves repeated questions from a
- * short-lived in-memory cache.
- */
+/** API entry point: resolves the reference date, plans, executes, caches repeated questions for 60 s. */
 @Service
 public class QueryFacade {
 
@@ -53,12 +49,7 @@ public class QueryFacade {
         this.configuredReferenceDate = configuredReferenceDate;
     }
 
-
-    /**
-     * @param professionistaId optional scope: only this professional's notes.
-     *                         In production it comes from the authenticated
-     *                         user's token, not from the request body.
-     */
+    /** @param professionistaId optional scope (in production it would come from the authenticated user) */
     public QueryResponse answer(String question, String referenceDateOverride, String professionistaId) {
         ReferenceDate referenceDate = resolveReferenceDate(referenceDateOverride);
         ObjectId professionista = parseProfessionista(professionistaId);
@@ -130,11 +121,7 @@ public class QueryFacade {
         return new ObjectId(id.trim());
     }
 
-    /**
-     * The sample dataset covers Mar-Dec 2024, so "today" would make every
-     * relative window empty. Order of precedence: explicit request parameter,
-     * REFERENCE_DATE configuration, latest calendar event in the database.
-     */
+    /** The demo dataset is Mar-Dec 2024, so "today" is: request parameter, then REFERENCE_DATE, then the latest calendar event. */
     private record ReferenceDate(Instant value, String source) {
     }
 

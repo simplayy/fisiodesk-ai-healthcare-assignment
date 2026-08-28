@@ -8,11 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
-/**
- * Pre-plans a configurable list of questions at startup (the suggested
- * queries shown in the UI, or in a real deployment the professionals' saved
- * searches), so the first user never pays the LLM planning latency.
- */
+/** Plans a configured list of questions at startup (the suggested queries of the UI), so the first click is fast. */
 @Component
 @ConfigurationProperties(prefix = "smartquery.warmup")
 public class PlanWarmup {
@@ -41,8 +37,7 @@ public class PlanWarmup {
         }
         log.info("Warming up plans for {} questions", questions.size());
         questions.forEach(planningService::warmUp);
-        // A few real calls: the first opens the connection and loads the
-        // client path, the next ones let the JIT settle on the path users hit.
+        // Real calls to open the connection and warm the client path.
         planningService.primeLlmClient(questions.get(0), 3);
     }
 }

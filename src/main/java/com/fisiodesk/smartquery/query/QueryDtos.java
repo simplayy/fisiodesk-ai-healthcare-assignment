@@ -60,12 +60,7 @@ public final class QueryDtos {
     public record ExclusionView(String pazienteId, String nome, String cognome, String reason) {
     }
 
-    /**
-     * How the answer was produced: where the plan came from, which words of
-     * the question the lexicon recognised, each step with its timing and
-     * counts, and every patient with notes in the window who was left out
-     * and why. Built from what the pipeline actually did, no extra AI call.
-     */
+    /** How the answer was produced, built from what the pipeline did (no extra AI call). */
     public record ExplainView(
             String planOrigin,
             String planOriginLabel,

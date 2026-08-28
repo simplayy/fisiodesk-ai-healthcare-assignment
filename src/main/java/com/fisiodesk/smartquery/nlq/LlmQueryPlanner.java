@@ -11,12 +11,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.stereotype.Component;
 
-/**
- * Translates the professional's question into a {@link QueryPlan} with the
- * LLM. The output is constrained to a JSON schema derived from
- * {@link Extraction}, so the model can only answer with valid field names
- * and enum values; what remains to the model is the semantics.
- */
+/** Turns a question into a {@link QueryPlan} with the LLM; output constrained to the JSON schema of {@link Extraction}. */
 @Component
 public class LlmQueryPlanner implements QueryPlanner {
 
@@ -47,7 +42,7 @@ public class LlmQueryPlanner implements QueryPlanner {
              "windowMonths":3,"missedLastAppointment":true}
             """;
 
-    /** Shape the model must fill in; descriptions end up in the JSON schema. */
+    /** Descriptions end up in the JSON schema. */
     record Extraction(
             @JsonPropertyDescription("Aree anatomiche citate nella domanda, vuoto se nessuna")
             List<BodyArea> bodyAreas,
@@ -95,5 +90,4 @@ public class LlmQueryPlanner implements QueryPlanner {
         return new QueryPlan(areas, extraction.requireImprovement(), extraction.requireWorsening(),
                 window, extraction.missedLastAppointment(), NAME);
     }
-
 }

@@ -11,12 +11,7 @@ import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/**
- * LLM-backed note analyzer. Used only at indexing time (never in the query
- * hot path) and only for notes not already analyzed, so the number of API
- * calls is bounded by the number of new/edited notes - that is how the AI
- * budget stays under control.
- */
+/** LLM analyzer, used only at indexing time and only for new or edited notes. */
 @Component
 public class LlmClinicalTextAnalyzer implements ClinicalTextAnalyzer {
 
@@ -51,13 +46,7 @@ public class LlmClinicalTextAnalyzer implements ClinicalTextAnalyzer {
     private final BeanOutputConverter<Extraction> converter = new BeanOutputConverter<>(Extraction.class);
     private final OpenAiChatOptions options;
 
-    /**
-     * @param analysisModel optional model for note analysis. Background
-     *                      indexing and interactive planning then draw on
-     *                      separate provider quotas (rate limits are usually
-     *                      per model), so a large re-indexing can never slow
-     *                      down or starve the professionals' questions.
-     */
+    /** @param analysisModel optional separate model, so indexing and planning use different provider quotas */
     public LlmClinicalTextAnalyzer(ChatClient chatClient,
                                    @Value("${smartquery.ai.analysis-model:}") String analysisModel) {
         this.chatClient = chatClient;

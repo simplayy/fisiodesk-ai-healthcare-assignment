@@ -6,13 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Italian physiotherapy lexicon shared by the heuristic analyzer and the
- * query planner. Terms are matched on accent-stripped lowercase text and are
- * mostly stems ("miglior" covers migliora/miglioramento/migliorata).
- *
- * The dataset intentionally uses many synonyms for the same concept
- * ("lombalgia", "mal di schiena", "low back pain", "colpo della strega"...):
- * keeping the mapping in one place makes it cheap to extend and easy to test.
+ * Italian physiotherapy terms used by the heuristic analyzer and the rule-based
+ * planner. Matched on lowercase, accent-stripped text; most entries are stems
+ * ("miglior" covers migliora, miglioramento, migliorata).
  */
 public final class ClinicalLexicon {
 
@@ -33,11 +29,7 @@ public final class ClinicalLexicon {
                 "anca", "coxalg", "trocanter"));
     }};
 
-    /**
-     * Explicit multi-word phrases checked before the generic positive stems,
-     * because a naive stem match would misread them ("nessun dolore" is good
-     * news even though "nessun" usually negates).
-     */
+    /** Checked before the positive stems: "nessun dolore" is good news even though "nessun" negates. */
     public static final List<String> POSITIVE_PHRASES = List.of(
             "senza dolore", "nessun dolore", "non ha piu dolore", "senza limitazioni",
             "senza difficolta", "senza problemi");
@@ -62,11 +54,7 @@ public final class ClinicalLexicon {
     public static final List<String> NEGATION_MARKERS = List.of(
             "non ", "nessun", "senza ", "scarso ", "scarsa ", "assenza di", "mancato ");
 
-    /**
-     * True when one of the terms appears at the start of a word: the terms are
-     * stems ("lombalg" matches "lombalgia"), but "anca" must not fire on
-     * "stanca" or "mancanza".
-     */
+    /** Term at the start of a word: "anca" must not match "stanca". */
     public static boolean containsTerm(String normalizedText, String term) {
         int from = 0;
         while (true) {

@@ -6,11 +6,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
-/**
- * Persistent cache of LLM-produced query plans. The interpretation of a
- * question does not depend on the data, so once a question has been planned
- * it never needs another LLM call - across restarts and across instances.
- */
+/** LLM plan of a question, stored so it is computed once across restarts and instances. */
 @Document("query_plans")
 public class StoredQueryPlan {
 

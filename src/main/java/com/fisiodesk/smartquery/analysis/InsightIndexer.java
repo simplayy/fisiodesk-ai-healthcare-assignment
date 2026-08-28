@@ -18,12 +18,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Incremental batch indexer. Every run it compares the source notes against
- * the note_insights collection and (re)analyzes only new or edited notes.
- * Runs at startup and then periodically, so notes added while the system is
- * live become searchable within one cycle without any manual step.
- *
- * This is where AI cost is paid: once per note version, never per query.
+ * Batch indexer. Each run compares the source notes with note_insights and
+ * analyzes only new or edited notes (text hash). This is where the AI cost is
+ * paid: once per note, never per query.
  */
 @Component
 public class InsightIndexer {
@@ -44,13 +41,7 @@ public class InsightIndexer {
     private long lastLlmCallNanos;
     private int llmFailures;
 
-    /**
-     * @param maxLlmCallsPerMinute pacing of the LLM calls made by this batch
-     *                             (0 = no pacing). Kept under the provider's
-     *                             per-minute quota, a large backlog is analyzed
-     *                             steadily instead of tripping 429s and falling
-     *                             back to the lexicon for most of the batch.
-     */
+    /** @param maxLlmCallsPerMinute pacing of the LLM calls (0 = none), to stay under the provider quota */
     public InsightIndexer(SchedaValutazioneRepository schedaRepository,
                           DiarioTrattamentoRepository diarioRepository,
                           NoteInsightRepository insightRepository,
@@ -79,13 +70,12 @@ public class InsightIndexer {
                 log.info("Indexed {} clinical notes ({} already up to date)", updated, existing.size());
             }
         } catch (Exception e) {
-            // Typically a race with the seed container at first startup; the
-            // next scheduled run will catch up.
+            // Usually the seed container is not done yet; the next run catches up.
             log.warn("Indexing cycle skipped: {}", e.getMessage());
         }
     }
 
-    /** Analyzes and saves each pending note individually, so progress survives a restart mid-batch. */
+    /** Saves each note as it goes, so progress survives a restart. */
     private int indexCollection(String source,
                                 List<? extends ClinicalNote> notes,
                                 Map<String, NoteInsight> existing) {
@@ -106,8 +96,7 @@ public class InsightIndexer {
             ClinicalNoteAnalysis analysis = analysisService.analyze(note.getDescrizione());
             insightRepository.save(toInsight(id, source, note, hash, analysis));
             updated++;
-            // The LLM answered with the lexicon: the provider is failing. Give up
-            // for this cycle instead of retrying every note every 30 seconds.
+            // Provider failing: stop this cycle instead of retrying every note.
             if (aiProperties.enabled() && !LlmClinicalTextAnalyzer.NAME.equals(analysis.analyzer())
                     && ++llmFailures >= MAX_LLM_FAILURES) {
                 log.warn("LLM unavailable after {} notes, retrying at the next cycle", llmFailures);
@@ -117,12 +106,7 @@ public class InsightIndexer {
         return updated;
     }
 
-    /**
-     * Spaces LLM calls evenly so the batch never exceeds the configured rate.
-     *
-     * @return false when the thread was interrupted (shutdown): the caller stops
-     *         the batch instead of burning the remaining notes on doomed calls.
-     */
+    /** Spaces LLM calls to the configured rate; false when interrupted (shutdown). */
     private boolean pace() {
         if (minIntervalNanos == 0 || !aiProperties.enabled()) {
             return true;
@@ -140,11 +124,7 @@ public class InsightIndexer {
         return true;
     }
 
-    /**
-     * When the LLM becomes available, notes previously classified by the
-     * heuristic fallback are re-analyzed once. The reverse never happens:
-     * disabling the LLM keeps the richer analysis already paid for.
-     */
+    /** Notes analyzed by the fallback are re-analyzed once when the LLM is available. */
     private boolean shouldUpgrade(NoteInsight current) {
         return aiProperties.enabled() && !"llm".equals(current.getAnalyzer());
     }

@@ -11,10 +11,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Professionals present in the data, for the scope selector of the demo UI.
- * There is no professionals collection in the dataset: the list is derived
- * from {@code pazienti.professionista_principale}. In the real product the
- * scope comes from the authenticated user, not from a list.
+ * Professionals found in the data, for the selector of the demo UI (derived
+ * from pazienti.professionista_principale, there is no professionals collection).
  */
 @RestController
 @RequestMapping("/api")

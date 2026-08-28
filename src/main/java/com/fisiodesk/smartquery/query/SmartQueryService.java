@@ -24,12 +24,7 @@ import java.util.stream.Collectors;
 import org.bson.types.ObjectId;
 import org.springframework.stereotype.Service;
 
-/**
- * Executes a {@link QueryPlan} against pre-computed insights. Everything here
- * is plain MongoDB reads over indexed collections - no AI calls - which is
- * what keeps the endpoint within the latency budget regardless of how many
- * professionals are querying concurrently.
- */
+/** Executes a {@link QueryPlan} over note_insights, eventi_calendario and pazienti: plain indexed reads, no AI. */
 @Service
 public class SmartQueryService {
 
@@ -60,14 +55,8 @@ public class SmartQueryService {
 
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.of("UTC"));
 
-
-
     /**
-     * Executes the plan over the pre-computed insights.
-     *
-     * @param professionistaId when set, only notes written by this professional
-     *                         are considered: each professional sees their own
-     *                         patients. Null means no scoping (admin / demo).
+     * @param professionistaId when set, only this professional's notes are read; null = no scoping
      * @return the matching patients plus a trace of what the execution did
      */
     public Execution run(QueryPlan plan, Instant referenceDate, ObjectId professionistaId) {
@@ -146,9 +135,7 @@ public class SmartQueryService {
                              QueryPlan plan,
                              Instant referenceDate,
                              Map<String, Paziente> patients) {
-        // Clinical trend over the window, computed only on the notes that match
-        // the requested body area: a patient improving on a different problem
-        // (e.g. cervicalgia) must not pass a lumbar-improvement filter.
+        // Trend computed only on the notes of the requested area.
         int totalScore = insights.stream().mapToInt(NoteInsight::getImprovementScore).sum();
 
         if (plan.requireImprovement() && totalScore <= 0) {

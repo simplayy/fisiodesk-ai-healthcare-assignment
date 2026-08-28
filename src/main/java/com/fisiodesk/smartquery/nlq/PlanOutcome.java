@@ -2,11 +2,7 @@ package com.fisiodesk.smartquery.nlq;
 
 import java.util.List;
 
-/**
- * A plan together with how it was obtained: which component produced it, how
- * long the request waited for it and which words of the question the lexicon
- * recognised. This is what the "how was this answered" panel is built from.
- */
+/** A plan plus where it came from, how long it took and which words the lexicon recognised. */
 public record PlanOutcome(QueryPlan plan, Origin origin, long planMs, List<PlanClue> clues) {
 
     public enum Origin {

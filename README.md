@@ -6,7 +6,7 @@ Sistema di query in linguaggio naturale sui dati clinici di FisioDesk. Un profes
 
 e ottiene la lista dei pazienti corrispondenti, con gli estratti delle schede e del diario che giustificano ogni risultato. La ricerca sui testi non chiama l'AI: le note sono già analizzate e indicizzate, quindi la risposta arriva in poche decine di millisecondi. L'AI serve solo a interpretare una domanda nuova, una volta sola e con un limite di tempo.
 
-**Stack**: Java 17, Spring Boot 3.5, Spring AI 1.1, Gradle, MongoDB. È lo stesso stack di FisioDesk/Dottai, quindi i componenti si integrano nel backend attuale senza aggiungere un runtime (Spring AI 1.1 è la versione compatibile con Boot 3; la 2.0 richiede Boot 4). Il frontend demo è HTML/JS statico servito dall'applicazione stessa.
+**Stack**: Java 17, Spring Boot 3.5, Spring AI 1.1, Gradle, MongoDB. La consegna lascia libera la scelta del linguaggio: ho usato Java e Spring Boot perché è lo stack di FisioDesk/Dottai, quindi i componenti si integrano nel backend attuale senza aggiungere un runtime (Spring AI 1.1 è la versione compatibile con Boot 3; la 2.0 richiede Boot 4). Il frontend demo è HTML/JS statico servito dall'applicazione stessa.
 
 ---
 
@@ -138,6 +138,18 @@ Con il vincolo dei 2 s per 50+ professionisti concorrenti e un budget AI limitat
 
 Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback deterministico basato su un lessico fisioterapico italiano con gestione delle negazioni. Le chiamate hanno timeout e un retry (Spring AI); esaurito quello, il fallback scatta per timeout, errori del provider o risposte non valide. Quando l'LLM torna disponibile, l'indexer ri-analizza (una volta sola) le note classificate col fallback.
 
+## Le domande della consegna, in breve
+
+- **Dove sono le informazioni?** Il dolore lombare e il miglioramento stanno nei testi liberi di `schede_valutazione` e `diario_trattamenti`; l'appuntamento saltato in `eventi_calendario`; nome e contatti in `pazienti`.
+- **Come estrarre "miglioramento" dai testi?** Ogni nota riceve un punteggio da -3 a +3 (dall'LLM o dal lessico) che viene salvato in `note_insights`. Per un paziente si sommano i punteggi delle sue note nel periodo: se la somma è positiva c'è miglioramento.
+- **Come identificare "dolore lombare"?** Ogni nota viene taggata con le aree anatomiche citate. Il lessico conosce i sinonimi (lombalgia, mal di schiena, low back pain, colpo della strega), l'LLM copre le formulazioni non previste.
+- **Come definire "ultimo appuntamento saltato"?** L'evento più recente del paziente fino alla data di riferimento ha stato `no_show`. Un ultimo evento `cancellato` o `prenotato` non conta.
+- **Quale architettura permette risposte sotto i 2 secondi?** L'AI lavora prima, quando le note vengono indicizzate; la query fa solo letture su Mongo con indici. Una domanda nuova passa dall'LLM una volta sola e con un tempo massimo, poi il piano viene salvato.
+- **Come gestire i costi delle API?** Una chiamata per nota (una sola volta, anche se poi le query sono mille) e una per domanda distinta. Modello economico e un limite di chiamate al minuto per restare nella quota.
+- **Cosa succede se l'AI non funziona?** Timeout e un retry, poi il lessico prende il posto dell'LLM sia per le note sia per le domande: il sistema risponde comunque e nella risposta si vede quale componente ha lavorato. Quando l'AI torna, le note analizzate col lessico vengono rianalizzate.
+- **Come si aggiornano i dati?** Un job ogni 30 secondi indicizza le note nuove o modificate (confronto con l'hash del testo).
+- **Come vengono presentati i risultati?** Lista ordinata per punteggio di miglioramento; per ogni paziente l'ultimo appuntamento e gli estratti delle note che giustificano il risultato, più una spiegazione di come è nata la risposta e di chi è stato escluso e perché.
+
 ---
 
 ## Trade-off principali
@@ -155,6 +167,7 @@ Ogni punto che usa l'LLM (interpretazione domanda, analisi note) ha un fallback 
 ├── Dockerfile                  # build multi-stage (Gradle -> JRE)
 ├── scripts/                    # smoke-test.sh (query target), load-test.py (latenza sotto carico)
 ├── data/                       # dataset demo (marzo-dicembre 2024)
+├── ai_integration_homework_v2.md, USE_CASES_AND_TESTS.md   # consegna e casi d'uso forniti
 ├── src/main/java/com/fisiodesk/smartquery/
 │   ├── analysis/               # lessico clinico, analizzatori, indexer batch
 │   ├── nlq/                    # domanda -> piano: planner LLM/regole, guardrail, budget, plan store

@@ -7,13 +7,9 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Deterministic, zero-cost analyzer based on the physiotherapy lexicon.
- *
- * It is intentionally simple but handles the traps present in real clinical
- * notes: negations ("non migliora", "non risponde bene alla terapia") must not
- * count as improvement, and phrases like "nessun dolore residuo" must not
- * count as negations. It doubles as the always-available fallback when the
- * LLM analyzer is disabled, over budget or failing.
+ * Lexicon-based analyzer, no external calls. Handles negations ("non migliora")
+ * and positive phrases that contain negation words ("nessun dolore residuo").
+ * Also the fallback when the LLM is disabled or failing.
  */
 @Component
 public class HeuristicClinicalTextAnalyzer implements ClinicalTextAnalyzer {
@@ -41,7 +37,7 @@ public class HeuristicClinicalTextAnalyzer implements ClinicalTextAnalyzer {
 
         int score = 0;
 
-        // Explicitly negated improvements first: "non migliora" must win over "migliora".
+        // "non migliora" must win over "migliora".
         for (String phrase : ClinicalLexicon.NEGATED_IMPROVEMENT_PHRASES) {
             if (normalized.contains(phrase)) {
                 score--;

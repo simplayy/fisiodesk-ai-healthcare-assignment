@@ -27,15 +27,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 /**
- * Turns a question into a {@link QueryPlan} under a latency budget.
- *
- * Known questions are served from the {@code query_plans} collection (a plan
- * does not depend on the data, so it is computed once per question, across
- * restarts and instances). For a new question the LLM planner is started
- * and awaited for at most {@code smartquery.ai.plan-timeout-ms}; past that
- * the request is answered with the rule-based plan while the LLM plan is
- * completed in the background and stored for the next time. Concurrent
- * requests for the same question share a single LLM call.
+ * Question to plan, under a time budget. Known questions come from the
+ * query_plans collection; a new one goes to the LLM for at most
+ * plan-timeout-ms, past that the rule-based plan answers and the LLM plan is
+ * stored for next time. Concurrent requests for the same question share one
+ * LLM call.
  */
 @Service
 public class QueryPlanningService {
@@ -61,7 +57,6 @@ public class QueryPlanningService {
         this.llmExecutor = llmExecutor;
         this.planRepository = planRepository;
     }
-
 
     /** Plans the question and reports where the plan came from and how long it took. */
     public PlanOutcome planWithOrigin(String question) {
@@ -100,10 +95,7 @@ public class QueryPlanningService {
         return count;
     }
 
-    /**
-     * Pre-computes the LLM plan for a question outside any request, e.g. for
-     * suggested or saved queries at startup.
-     */
+    /** Plans a question outside any request (suggested queries at startup). */
     public void warmUp(String question) {
         if (!aiProperties.enabled()) {
             return;
@@ -115,11 +107,8 @@ public class QueryPlanningService {
     }
 
     /**
-     * Makes a real LLM call outside any request, result discarded. After a
-     * restart every plan may already be stored, so without this the first
-     * new question would also pay the one-off cost of opening the HTTPS
-     * connection and JIT-compiling the client path (measured at ~0.8 s on top
-     * of the model latency), enough to push it over the planning budget.
+     * A few real LLM calls at startup, results discarded: after a restart the
+     * first call pays HTTPS setup and JIT (~0.8 s), enough to miss the budget.
      */
     public void primeLlmClient(String question, int calls) {
         if (!aiProperties.enabled()) {

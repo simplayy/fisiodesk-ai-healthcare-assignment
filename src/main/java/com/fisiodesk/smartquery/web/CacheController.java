@@ -7,11 +7,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Empties the answer cache and the stored plans, so the next question goes
- * through the whole pipeline again (useful to show it live). Note insights
- * are not a cache and are left alone.
- */
+/** Empties the answer cache and the stored plans; note insights are left alone. */
 @RestController
 @RequestMapping("/api")
 public class CacheController {

@@ -17,13 +17,9 @@ public class AiConfig {
     }
 
     /**
-     * HTTP client for the LLM calls, still configured by the standard
-     * {@code spring.http.client.*} properties (timeouts). HTTP/1.1 on purpose:
-     * with HTTP/2 the JDK client multiplexes every call on one connection and
-     * the provider answers the streams one after the other, so ten questions
-     * planned at the same time came back ~60 ms apart in a staircase instead
-     * of in parallel. With one connection per in-flight call (pooled and kept
-     * alive) concurrent questions really run concurrently.
+     * HTTP/1.1 on purpose: with HTTP/2 the JDK client multiplexes all calls on
+     * one connection and the provider serves them one after the other, so
+     * concurrent questions were not actually concurrent.
      */
     @Bean
     public ClientHttpRequestFactoryBuilder<?> clientHttpRequestFactoryBuilder() {
@@ -32,12 +28,9 @@ public class AiConfig {
     }
 
     /**
-     * Pool for the LLM planning calls. Every new question runs here while the
-     * request thread waits up to the planning budget, so the pool must be wide
-     * enough that a burst of new questions does not queue behind each other:
-     * with 4 threads and ~0.8 s per call, the fifth concurrent question would
-     * already miss the budget. Calls are I/O bound, threads are cheap, and the
-     * provider's rate limit is the real ceiling.
+     * Pool for the LLM planning calls, wide enough that a burst of new
+     * questions does not queue: with 4 threads and ~0.8 s per call the fifth
+     * concurrent question would already miss the budget.
      */
     @Bean(destroyMethod = "shutdownNow")
     public ExecutorService llmExecutor() {

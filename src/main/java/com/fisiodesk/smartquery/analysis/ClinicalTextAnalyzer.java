@@ -1,11 +1,6 @@
 package com.fisiodesk.smartquery.analysis;
 
-/**
- * Strategy interface for the note analysis step. Two implementations exist:
- * a deterministic lexicon-based analyzer (always available, zero cost) and an
- * LLM-backed one that is enabled when an API key is configured and falls back
- * to the heuristic on any failure.
- */
+/** Analyzes one free-text clinical note (lexicon-based or LLM-based). */
 public interface ClinicalTextAnalyzer {
 
     ClinicalNoteAnalysis analyze(String text);

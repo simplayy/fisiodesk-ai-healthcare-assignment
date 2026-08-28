@@ -10,12 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-/**
- * Chooses the analyzer for each note: LLM when configured, with automatic
- * degradation to the deterministic analyzer on any failure. The system keeps
- * answering (with slightly coarser classification) even if the AI provider is
- * down or the budget is exhausted.
- */
+/** Picks the analyzer: LLM when enabled, lexicon otherwise or on any failure. */
 @Service
 public class TextAnalysisService {
 
@@ -47,14 +42,10 @@ public class TextAnalysisService {
     }
 
     /**
-     * Combines the model's reading with the lexicon's. Anatomical areas are a
-     * closed vocabulary where the lexicon is precise and small models are not
-     * (they tend to list every enum value): the model's areas only count when
-     * the lexicon found none. For the clinical trend the model is trusted
-     * unless the lexicon found explicit markers pointing the other way or the
-     * model saw no signal at all - "situazione stazionaria" or "non migliora"
-     * must never be neutralised. The evidence shown always comes from whoever
-     * decided the score, so the excerpt never contradicts the badge.
+     * Areas: the lexicon wins when it found any (small models tend to list
+     * every enum value). Trend: the model wins unless the lexicon found
+     * explicit markers of the opposite sign ("situazione stazionaria" must not
+     * be neutralised). Evidence follows whoever decided the score.
      */
     static ClinicalNoteAnalysis merge(ClinicalNoteAnalysis llm, ClinicalNoteAnalysis lexical) {
         Set<BodyArea> areas = lexical.bodyAreas().isEmpty() ? llm.bodyAreas() : lexical.bodyAreas();

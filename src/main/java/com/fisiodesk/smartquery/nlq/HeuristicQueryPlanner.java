@@ -11,11 +11,9 @@ import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 /**
- * Rule-based fallback parser for natural-language questions. It reuses the
- * clinical lexicon to spot anatomical areas and looks for a handful of intent
- * markers (improvement, missed appointment, time window). Deliberately
- * conservative: anything it does not recognize is simply not filtered on,
- * which for a clinical tool beats guessing.
+ * Rule-based question parser, also the fallback when the LLM is off or late.
+ * Uses the lexicon for areas and a few markers for trend, no-show and time
+ * window; only filters on what it recognizes.
  */
 @Component
 public class HeuristicQueryPlanner implements QueryPlanner {
@@ -27,12 +25,7 @@ public class HeuristicQueryPlanner implements QueryPlanner {
     private static final Pattern WINDOW_SINGLE_PATTERN =
             Pattern.compile("ultimo\\s+mese");
 
-    /**
-     * Catches "non migliora", "non mostrano miglioramento", "nessun segno di
-     * miglioramento", "non ha ancora avuto miglioramenti". Three intervening
-     * words cover the phrasings people actually type; more than that and a
-     * negation usually belongs to another part of the sentence.
-     */
+    /** "non migliora", "non mostrano miglioramento", "nessun segno di miglioramento": up to three words in between. */
     private static final Pattern NEGATED_IMPROVEMENT_PATTERN =
             Pattern.compile("(non|senza|nessun\\w*)\\s+(\\w+\\s+){0,3}miglior");
 
@@ -44,7 +37,7 @@ public class HeuristicQueryPlanner implements QueryPlanner {
         return analyze(question).plan();
     }
 
-    /** The words of the question the lexicon recognised, and how it read them. */
+    /** Words of the question the lexicon recognised and how it read them. */
     public List<PlanClue> explain(String question) {
         return analyze(question).clues();
     }
@@ -134,6 +127,4 @@ public class HeuristicQueryPlanner implements QueryPlanner {
         }
         return null;
     }
-
-
 }

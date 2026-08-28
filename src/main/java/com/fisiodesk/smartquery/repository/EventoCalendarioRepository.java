@@ -8,12 +8,7 @@ import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface EventoCalendarioRepository extends MongoRepository<EventoCalendario, String> {
 
-    /**
-     * Latest calendar event for a patient up to the reference date. "Last
-     * appointment" deliberately includes every state: a patient whose most
-     * recent event was cancelled or is still "prenotato" did not skip it, so
-     * checking the state of this single event answers the question.
-     */
+    /** Latest event of a patient up to the reference date, any state: its state tells whether the last appointment was skipped. */
     Optional<EventoCalendario> findFirstByPazienteIdAndDataLessThanEqualOrderByDataDesc(
             ObjectId pazienteId, Instant reference);
 
