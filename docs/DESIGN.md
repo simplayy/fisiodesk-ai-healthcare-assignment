@@ -164,7 +164,7 @@ Le differenze rimaste danno tutte una risposta **più larga** del dovuto: il par
 
 - **Modello piccolo in locale più dizionario, invece di un modello grande.** Gira ovunque e tiene i testi clinici in casa, ma sbaglia circa una domanda su tre sui termini espliciti; il dizionario recupera quei casi. Con un modello grande il dizionario non serve, ma non fa danno.
 - **Unisco i dati nel codice invece che nel database.** MongoDB saprebbe unire le tabelle in una query sola (`$lookup`), ma tre ricerche separate e indicizzate sono più leggibili e più facili da testare. Costa qualche viaggio in più, irrilevante a questi volumi; con volumi veri si passerebbe alla query unica.
-- **Gemini per la demo online.** Modelli separati per domande e note, freno sulle chiamate, tempo massimo 1,4 secondi. Con il piano gratuito si coprono 15 domande nuove al minuto: oltre serve il piano a pagamento, non codice diverso.
+- **Gemini per la demo online.** Modelli separati per domande e note, freno sulle chiamate al minuto. Con il piano gratuito si coprono 15 domande nuove al minuto: oltre serve il piano a pagamento, non codice diverso.
 
 ## Cosa non fa
 
