@@ -100,6 +100,8 @@ Ogni nota porta l'id di chi l'ha scritta. Se la richiesta indica un professionis
 
 Nel prodotto vero l'id arriverebbe da chi ha fatto il login. Qui è nella richiesta per poterlo mostrare nella demo.
 
+Da notare: il filtro vale sulle note, non sul calendario. L'ultimo appuntamento è l'ultimo in assoluto del paziente, anche se preso con un altro professionista. Sui dati di esempio non si vede perché ogni paziente ne ha uno solo.
+
 ## La spiegazione allegata a ogni risposta
 
 Il blocco `explain` è costruito da quello che il sistema ha fatto davvero, senza chiedere niente all'AI:
@@ -119,7 +121,7 @@ Meglio questo di un riassunto scritto dall'AI: costerebbe una chiamata a ogni ri
 - **Dove interviene**: quando legge una nota in indicizzazione, e quando traduce una domanda mai vista in un filtro. Il filtro viene salvato, quindi succede una volta per domanda.
 - **Costo**: proporzionale alle note scritte e alle domande diverse, non alle ricerche. Mille professionisti con venti note al giorno fanno circa ventimila chiamate brevi al giorno.
 - **Quote del fornitore**: le richieste al minuto si contano per modello, quindi l'indicizzazione può usarne uno diverso (`AI_ANALYSIS_MODEL`) e ha un freno sulle chiamate al minuto (`AI_INDEXER_RPM`): una reindicizzazione non toglie spazio alle domande.
-- **Tempo massimo di attesa**: 1,5 secondi, 1,8 con Gemini. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo.
+- **Tempo massimo di attesa**: 1,5 secondi, 1,8 con Gemini. Oltre, risponde il parser a regole mentre l'AI finisce per conto suo e il filtro viene salvato per la volta dopo. Quanto spesso succede e quanto pesa è misurato più sotto.
 - **Richieste insieme**: dieci persone sulla stessa domanda nuova generano una sola chiamata, e fino a 16 chiamate possono partire insieme, così una raffica non si accoda. Le domande suggerite sono già interpretate all'avvio, insieme a qualche chiamata a vuoto per scaldare il collegamento: la prima dopo un riavvio costa 0,8 secondi in più solo per aprire la connessione.
 - **HTTP/1.1 forzato**: con HTTP/2 il client Java mandava tutte le chiamate su una connessione sola e il fornitore le serviva in fila. Dieci domande insieme tornavano a scaglioni e l'ultima sforava.
 - **Controllo sull'AI**: le aree trovate dal dizionario hanno la precedenza, i filtri espliciti che riconosce vengono aggiunti, e in contrasto "peggioramento" vince su "miglioramento". Su dieci domande di prova il modello piccolo in locale da solo ne prende sei, col controllo dieci. Con Gemini erano dieci già da solo.
@@ -139,6 +141,23 @@ Con `scripts/load-test.py` sulla demo con Gemini attivo, su un server a 4 proces
 
 Il caso peggiore è la terza riga, con l'AI dentro la richiesta: resta sotto i 2 secondi. Dopo un riavvio le note non vengono rilette (32 prima, 32 dopo, zero chiamate) e i filtri restano, perché stanno nel database.
 
+## Quando scatta il fallback e quanto cambia la risposta
+
+Se l'AI supera il tempo massimo risponde il parser a regole. Due domande: succede spesso, e quanto sbaglia.
+
+**Quanto spesso.** Sulla demo con Gemini, su 30 domande interpretate: la più veloce 736 ms, mediana 1035 ms, la più lenta 1266 ms, contro un budget di 1800. Nessuna oltre il budget, quindi zero fallback. Con il modello locale su CPU è il contrario: sfora quasi sempre.
+
+**Quanto cambia.** Ho preso le 28 domande già interpretate dall'AI e ho calcolato cosa avrebbe prodotto il parser a regole sulle stesse domande. Filtro identico in 24 casi su 28. Nei 4 diversi:
+
+| Domanda | Cosa perde il parser a regole | Risultato |
+|---|---|---|
+| "Pazienti con gonalgia recuperati..." | non conosce "gonalgia" | non filtra per ginocchio, risposta più larga |
+| "Chi ha la cervicalgia e sta peggio..." | cerca "peggior", non riconosce "sta peggio" | non filtra i peggiorati, risposta più larga |
+| "...non si fa più vedere" | non conosce la perifrasi | non filtra gli appuntamenti saltati, risposta più larga |
+| "...che non hanno fatto progressi" | cerca la negazione solo su "miglior", qui c'è "progressi" | legge il contrario: restituisce i migliorati |
+
+Tre casi su quattro danno una risposta più larga del dovuto, che è l'errore meno grave. Uno dà la risposta opposta. In tutti i casi la risposta dichiara che l'ha interpretata il parser a regole, e dalla seconda volta la domanda usa il filtro dell'AI, che intanto è stato salvato.
+
 ## Le scelte discutibili
 
 - **Modello piccolo in locale più dizionario, invece di un modello grande.** Gira ovunque e tiene i testi clinici in casa, ma sbaglia circa una domanda su tre sui termini espliciti; il dizionario recupera quei casi. Con un modello grande il dizionario non serve, ma non fa danno.
@@ -151,6 +170,10 @@ Il caso peggiore è la terza riga, con l'AI dentro la richiesta: resta sotto i 2
 - **Le note cancellate restano.** Se una nota viene eliminata dal gestionale, la sua analisi resta. Servirebbe una pulizia periodica.
 - **Domande che non capisce.** Se non riconosce né area, né andamento, né filtro sugli appuntamenti ("ciao"), restituisce tutti i pazienti del periodo invece di dire che non ha capito. E non gestisce la negazione sugli appuntamenti: "che non hanno saltato" viene letto come "che hanno saltato".
 - **Modello locale e tempo massimo.** Senza scheda grafica una domanda nuova sfora quasi sempre: risponde il parser a regole e il filtro dell'AI serve dalla volta dopo. In locale l'AI dà il suo valore sulle note, non sull'interpretazione immediata.
+- **Il dizionario prende alcune frasi fuori contesto.** Cerca "non risponde" e quindi conta come peggioramento anche "non risponde al telefono". Legge "collo del femore" come zona cervicale e "parte alta della schiena" come lombare. Sui dati di esempio non capita, ma su note vere sì, e siccome il dizionario ha la precedenza sull'AI quando i due discordano, può ribaltare una lettura corretta.
+- **Il punteggio è una somma e ignora l'ordine.** "Peggiorato a novembre, ora nettamente migliorato" e la frase opposta ricevono lo stesso punteggio. Allo stesso modo una nota molto negativa di tre mesi fa annulla un miglioramento recente. Servirebbe pesare le note più recenti.
+- **Nessun filtro sullo stato del paziente.** Un paziente `sospeso` o `archiviato` compare come gli altri: nei dati di esempio Francesca Ricci è sospesa. L'API restituisce lo stato, l'interfaccia non lo mostra.
+- **I filtri delle domande non scadono.** Se l'AI interpreta male una domanda, quella lettura resta salvata e viene riusata finché non si svuota la cache con `DELETE /api/cache`.
 
 ## Cosa farei dopo
 

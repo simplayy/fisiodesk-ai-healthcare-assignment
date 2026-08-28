@@ -34,6 +34,8 @@ Una chiamata per nota, e mai più se il testo non cambia (confronto per hash). U
 
 Prende il suo posto il dizionario, sia sulle note sia sulle domande, e il sistema continua a rispondere. Le note lette col dizionario vengono rilette una volta quando l'AI torna. Ogni risposta dice quale dei due ha lavorato.
 
+Quanto costa in precisione l'ho misurato: sulle 28 domande già interpretate dall'AI, il parser a regole produce lo stesso filtro in 24 casi. Negli altri 4 la risposta è più larga del dovuto, e in un caso ("non hanno fatto progressi") è opposta. Il dettaglio è in [DESIGN.md](DESIGN.md#quando-scatta-il-fallback-e-quanto-cambia-la-risposta).
+
 ## 2. Progettazione della Soluzione
 
 ### Data Strategy (Come organizzi i dati per query efficienti)
