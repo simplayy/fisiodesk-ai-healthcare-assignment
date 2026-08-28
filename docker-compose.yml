@@ -21,13 +21,13 @@ services:
     image: mongo:8.0
     container_name: fisiodesk-mongodb-seed
     volumes:
-      - ./data:/data:ro
+      - ./data:/seed:ro
     entrypoint: ["mongosh", "--quiet", "--host", "mongodb", "fisiodesk", "--eval"]
     command:
       - |
         const fs = require("fs");
         for (const c of ["pazienti", "schede_valutazione", "diario_trattamenti", "eventi_calendario"]) {
-          const docs = EJSON.parse(fs.readFileSync("/data/" + c + ".json", "utf8"));
+          const docs = EJSON.parse(fs.readFileSync("/seed/" + c + ".json", "utf8"));
           const r = db[c].bulkWrite(docs.map(d => ({ replaceOne: { filter: { _id: d._id }, replacement: d, upsert: true } })));
           print(c + ": " + docs.length + " documenti (" + r.upsertedCount + " nuovi)");
         }
