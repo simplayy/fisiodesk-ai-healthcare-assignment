@@ -120,13 +120,18 @@ La risposta include il tracciato dell'esecuzione (`explain`): origine del piano 
 
 ## Misure di carico
 
-Vincolo di latenza, misurato con `scripts/load-test.py` (Gemini, cache delle risposte fredda, tutti i piani dall'LLM, server a 4 core condiviso con MongoDB e col generatore di carico):
+Misurato con `scripts/load-test.py` sulla demo con Gemini attivo (server a 4 core condiviso con MongoDB e con il generatore di carico stesso).
 
-| Scenario | Richieste | p50 | p95 | max |
+| Scenario | Richieste | mediana | 95° percentile | massimo |
 |---|---|---|---|---|
-| 60 utenti concorrenti | 300 | 158 ms | 391 ms | 599 ms |
-| 100 utenti concorrenti | 500 | 199 ms | 865 ms | 1296 ms |
-| 10 domande mai viste nello stesso istante (planning LLM nella richiesta) | 10 | 1150 ms | 1350 ms | 1350 ms |
+| 60 professionisti insieme, domande già note | 300 | 56 ms | 141 ms | 156 ms |
+| 100 professionisti insieme, domande già note | 500 | 95 ms | 245 ms | 367 ms |
+| 60 professionisti insieme, con domande mai viste tra le loro | 300 | 121 ms | 1387 ms | 1627 ms |
+| 10 domande mai viste, tutte nello stesso istante | 10 | 1068 ms | 1264 ms | 1264 ms |
+
+Il caso peggiore è la terza riga: utenti concorrenti che fanno anche domande mai viste, quindi con la chiamata all'AI dentro la richiesta. Resta sotto i 2 secondi. Le righe uno e due sono il regime normale, quando i filtri delle domande sono già salvati.
+
+Dopo un riavvio dell'applicazione le note non vengono rianalizzate (verificato: 32 note indicizzate prima e dopo, zero chiamate all'AI) e i filtri delle domande restano salvati, perché stanno in MongoDB e non in memoria.
 
 ## Altri trade-off
 
